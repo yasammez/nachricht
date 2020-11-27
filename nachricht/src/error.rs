@@ -61,7 +61,7 @@ impl Display for DecodeError {
             DecodeError::Eof => f.write_str("Unexpected end of buffer while decoding"),
             DecodeError::Code(t) => f.write_str(&format!("Unexpected code {} while decoding lead byte", t)),
             DecodeError::Length(value) => f.write_str(&format!("Couldn't decode length: {} exceeds limit", value)),
-            DecodeError::Utf8(e) => f.write_str("String slice was not valid Utf-8"),
+            DecodeError::Utf8(_) => f.write_str("String slice was not valid Utf-8"),
             DecodeError::FixedValue(value) => f.write_str(&format!("Unrecognized value {} for Code 'Fixed'", value)),
             DecodeError::DuplicateKey => f.write_str("A key was followed directly by a key which is illegal"),
         }

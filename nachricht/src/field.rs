@@ -3,6 +3,7 @@ use crate::error::*;
 use std::mem::size_of;
 use std::io::Write;
 use std::convert::TryInto;
+use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Field<'a> {
@@ -71,6 +72,29 @@ impl<'a> Field<'a> {
 
 }
 
+impl fmt::Display for Field<'_> {
+
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self.name {
+            Some(name) => format!("@{} ", name),
+            None => "".into()
+        };
+        let value = match &self.value {
+            Value::Unit => "null".into(),
+            Value::Bool(true) => "true".into(),
+            Value::Bool(false)=> "false".into(),
+            Value::F32(value) => format!("{}f32", value),
+            Value::F64(value) => format!("{}f64", value),
+            Value::Int(s, value) => format!("{}{}", match s { Sign::Pos => "+", Sign::Neg => "-" }, value),
+            Value::Str(value) => "\"".to_owned() + &format!("{}", value) + "\"",
+            Value::Bytes(value) => format!("{:?}", value),
+            Value::Container(inner) => format!("({})", inner.iter().map(|f| format!("{}", f)).collect::<Vec<String>>().join(",")),
+        };
+        write!(f, "{}{}", name, value)
+    }
+
+}
+
 impl<'a> Value<'a> {
 
     pub fn encode<W: Write>(&self, w: &mut W) -> Result<usize, EncodeError> {
@@ -133,7 +157,7 @@ impl<'a> Decodeable<'a> {
             Code::Key       => Ok((Self::Key(std::str::from_utf8(&buf[..index])?), &buf[index..])),
             Code::Container => {
                 let mut fields = Vec::with_capacity(header.1 as usize);
-                for i in 0..header.1 {
+                for _i in 0..header.1 {
                     dbg!(&buf);
                     let (field, tmp) = Field::decode(buf)?;
                     buf = tmp;
@@ -223,11 +247,11 @@ mod test {
     #[test]
     fn array_mixed() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![ 
-                Field { name: None, value: Value::Int(Sign::Pos, 1) }, 
-                Field { name: None, value: Value::Int(Sign::Pos, 2) }, 
-                Field { name: None, value: Value::Int(Sign::Pos, 3) }, 
-                Field { name: None, value: Value::Int(Sign::Pos, 4) }, 
+        assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![
+                Field { name: None, value: Value::Int(Sign::Pos, 1) },
+                Field { name: None, value: Value::Int(Sign::Pos, 2) },
+                Field { name: None, value: Value::Int(Sign::Pos, 3) },
+                Field { name: None, value: Value::Int(Sign::Pos, 4) },
         ])}, &mut buf);
     }
 
@@ -244,13 +268,35 @@ mod test {
     #[test]
     fn map() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![ 
-                Field { name: Some("first"), value: Value::Int(Sign::Pos, 1) }, 
-                Field { name: Some("second"), value: Value::Int(Sign::Pos, 2) }, 
-                Field { name: Some("third"), value: Value::Int(Sign::Pos, 3) }, 
-                Field { name: Some("fourth"), value: Value::Int(Sign::Pos, 4) }, 
+        assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![
+                Field { name: Some("first"), value: Value::Int(Sign::Pos, 1) },
+                Field { name: Some("second"), value: Value::Int(Sign::Pos, 2) },
+                Field { name: Some("third"), value: Value::Int(Sign::Pos, 3) },
+                Field { name: Some("fourth"), value: Value::Int(Sign::Pos, 4) },
         ])}, &mut buf);
     }
+
+    #[test]
+    fn display() {
+        let object = Field { name: None, value: Value::Container(vec![
+            Field { name: Some("integer"), value: Value::Int(Sign::Pos, 1337) },
+            Field { name: Some("bool"), value: Value::Bool(true) },
+            Field { name: Some("optional"), value: Value::Unit },
+            Field { name: Some("array"), value: Value::Container(vec![
+                Field { name: None, value: Value::Int(Sign::Pos, 8472) },
+                Field { name: None, value: Value::Int(Sign::Neg, 404) },
+                Field { name: None, value: Value::Str("Hallo \"Welt\"\n") },
+            ])},
+            Field { name: Some("bytes"), value: Value::Bytes(&[1, 2, 3, 4]) },
+            Field { name: Some("float"), value: Value::F64(std::f64::consts::E) }
+        ])};
+        println!("{}", &object);
+        let mut buf = Vec::new();
+        let _ = object.encode(&mut buf);
+        dbg!(buf);
+        assert_eq!(format!("{}", &object), "(@integer +1337,@bool true,@null optional,@array (+8472,-404,\"Hallo \\\"Welt\\\"\\n\"),@bytes [1, 2, 3, 4],@float 2.718281828459045f64)");
+    }
+
 
     fn assert_roundtrip(value: Field, buf: &mut Vec<u8>) {
         let _ = value.encode(buf);
