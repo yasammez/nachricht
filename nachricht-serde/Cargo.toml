@@ -1,0 +1,10 @@
+[package]
+name = "nachricht-serde"
+version = "0.1.0"
+authors = ["Liv <liv.fischer@senacor.com>"]
+edition = "2018"
+
+[dependencies]
+
+serde = "1.0.117"
+nachricht = { version = "0.1.0", path = "../nachricht" }

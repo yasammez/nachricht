@@ -30,7 +30,7 @@ impl From<std::io::Error> for EncodeError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DecodeError {
     Eof,
     Code(u8),
