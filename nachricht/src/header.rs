@@ -10,11 +10,11 @@ use crate::error::*;
 use std::io::Write;
 
 #[derive(Debug, PartialEq)]
-pub struct Header(Code, u64);
+pub struct Header(pub Code, pub u64);
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Clone, Copy)]
-enum Code {
+pub enum Code {
     /// The value describes a postive integer fitting into an u64
     Intp      = 0,
     /// The value describes a negative integer whose negative fits into an u64
@@ -58,7 +58,6 @@ impl Code {
     }
 
 }
-
 
 impl Header {
 
