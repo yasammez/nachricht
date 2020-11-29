@@ -30,6 +30,7 @@ pub enum Value<'a> {
     Container(Vec<Field<'a>>),
 }
 
+#[derive(Debug)]
 enum Decodeable<'a> {
     Val(Value<'a>),
     Key(&'a str),
@@ -134,7 +135,6 @@ impl<'a> Decodeable<'a> {
             Code::Container => {
                 let mut fields = Vec::with_capacity(header.1 as usize);
                 for _i in 0..header.1 {
-                    dbg!(&buf);
                     let (field, tmp) = Field::decode(buf)?;
                     buf = tmp;
                     fields.push(field);

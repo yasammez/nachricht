@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde::de::{self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor};
 use nachricht::*;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use crate::error::{Error, Result};
 
@@ -138,19 +138,23 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_bytes<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::Bytes(value) => visitor.visit_bytes(value),
+        let (Header(code, value), tail) = Header::decode(self.input)?;
+        match code {
+            Code::Bytes | Code::Container => { // TODO: absolutely no sanity checks here!
+                self.input = &tail[value as usize ..];
+                visitor.visit_borrowed_bytes(&tail[.. value as usize])
+            },
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_byte_buf<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::Bytes(value) => visitor.visit_byte_buf(value.to_vec()),
+        let (Header(code, value), tail) = Header::decode(self.input)?;
+        match code {
+            Code::Bytes | Code::Container => { // TODO: absolutely no sanity checks here!
+                self.input = &tail[value as usize ..];
+                visitor.visit_byte_buf(tail[.. value as usize].to_vec())
+            },
             _ => Err(Error::Unexpected),
         }
     }
@@ -304,19 +308,18 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
             self.remaining -= 1;
             let (Header(code, value), tail) = Header::decode(self.de.input)?;
             match code {
-                Code::Key => seed.deserialize(&mut *self.de).map(Some), // TODO: wie gebe ich den Inhalt des Keys weiter?
+                Code::Key => {
+                    let name = std::str::from_utf8(&tail[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
+                    self.de.input = &tail[value as usize ..];
+                    seed.deserialize(name.into_deserializer()).map(Some)
+                },
                 _ => Err(Error::Unexpected)
             }
         }
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value> {
-        if self.remaining == 0 {
-            Err(Error::Trailing)
-        } else {
-            self.remaining -= 1;
-            seed.deserialize(&mut *self.de)
-        }
+        seed.deserialize(&mut *self.de)
     }
 
 }
