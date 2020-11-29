@@ -136,7 +136,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         match len {
-            Some(l) => { 
+            Some(l) => {
                 Header(Code::Container, l as u64).encode(&mut self.output)?;
                 Ok(self)
             },
@@ -236,7 +236,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
 impl<'a> ser::SerializeMap for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
-    
+
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
         key.serialize(&mut **self)
     }

@@ -9,7 +9,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     Message(String),
     Encode(EncodeError),
+    Decode(DecodeError),
     Length,
+    Trailing,
+    Unexpected,
 }
 
 impl ser::Error for Error {
@@ -29,7 +32,10 @@ impl Display for Error {
         match self {
             Error::Message(msg) => fmt.write_str(msg),
             Error::Encode(e) => write!(fmt, "Encoding error: {}", e.to_string()),
+            Error::Decode(e) => write!(fmt, "Decoding error: {}", e.to_string()),
             Error::Length => fmt.write_str("Length required"),
+            Error::Trailing => fmt.write_str("Trailing characters in input"),
+            Error::Unexpected => fmt.write_str("Unexpected type encountered"),
         }
     }
 }
@@ -37,6 +43,18 @@ impl Display for Error {
 impl From<EncodeError> for Error {
     fn from(e: EncodeError) -> Error {
         Error::Encode(e)
+    }
+}
+
+impl From<DecodeError> for Error {
+    fn from(e: DecodeError) -> Error {
+        Error::Decode(e)
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(e: std::num::TryFromIntError) -> Error {
+        Error::Unexpected // TODO: bessere Variante
     }
 }
 
