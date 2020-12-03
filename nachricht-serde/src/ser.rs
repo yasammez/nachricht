@@ -130,7 +130,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_newtype_variant<T: ?Sized + Serialize>(self, name: &'static str, index: u32, variant: &'static str, value: &T) -> Result<()> {
-        Field { name: None, value: Value::Container(vec![Field { name: Some(name), value: Value::Str(variant)}])}.encode(&mut self.output)?;
+        Header(Code::Container, 1).encode(&mut self.output)?;
+        Header(Code::Key, variant.len() as u64).encode(&mut self.output)?;
+        self.output.write_all(variant.as_bytes()).map_err(|e| EncodeError::Io(e))?;
+        value.serialize(self)?;
         Ok(())
     }
 

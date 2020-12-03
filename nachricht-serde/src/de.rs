@@ -161,9 +161,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         let (field, tail) = Field::decode(self.input)?;
-        // TODO: Don't advance the buffer ... probably?
         match &field.value {
-            Value::Unit => visitor.visit_none(),
+            Value::Unit => {
+                self.input = tail;
+                visitor.visit_none()
+            },
             _ => visitor.visit_some(self),
         }
     }
@@ -225,7 +227,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.input = tail;
         match code {
             Code::Str => {
-                let name = std::str::from_utf8(&self.input[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
+                self.input = &tail[value as usize ..];
+                let name = std::str::from_utf8(&tail[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
                 visitor.visit_enum(name.into_deserializer())
             },
             Code::Container => visitor.visit_enum(EnumDeserializer::new(&mut *self)),
@@ -235,10 +238,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_identifier<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         let (Header(code, value), tail) = Header::decode(self.input)?;
-        self.input = tail;
         match code {
             Code::Key => {
-                let string = std::str::from_utf8(&self.input[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
+                self.input = &tail[value as usize ..];
+                let string = std::str::from_utf8(&tail[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
                 visitor.visit_borrowed_str(string)
             },
             _ => Err(Error::Unexpected)
@@ -338,10 +341,9 @@ impl<'de, 'a> EnumAccess<'de> for EnumDeserializer<'a, 'de> {
     type Error = Error;
     type Variant = Self;
 
-    fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self::Variant)>
-    {
-        let value = seed.deserialize(&mut *self.de)?;
-        Ok((value, self))
+    fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self::Variant)> {
+        let variant = seed.deserialize(&mut *self.de)?;
+        Ok((variant, self))
     }
 }
 
@@ -361,7 +363,8 @@ impl<'de, 'a> VariantAccess<'de> for EnumDeserializer<'a, 'de> {
     }
 
     fn struct_variant<V: Visitor<'de>>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value> {
-        de::Deserializer::deserialize_map(self.de, visitor)
+        let (Header(code, value), tail) = Header::decode(self.de.input)?;
+        de::Deserializer::deserialize_struct(self.de, "", fields, visitor) // TODO: stimmt das?
     }
 
 }
@@ -384,6 +387,7 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
         if self.remaining == 0 {
             Ok(None)
         } else {
+            self.remaining -= 1;
             seed.deserialize(&mut *self.de).map(Some)
         }
     }

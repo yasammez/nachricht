@@ -41,8 +41,10 @@ struct SerdeDataModel<'a> {
     bytes: &'a [u8],
     #[serde(with = "serde_bytes")]
     owned_bytes: Vec<u8>,
-    /*
-    option: Option<i8>,
+    unoptimized_bytes: &'a [u8],
+    unoptimized_owned_bytes: Vec<u8>,
+    option_some: Option<i8>,
+    option_none: Option<i8>,
     unit: (),
     unit_struct: UnitStruct,
     newtype_struct: NewtypeStruct,
@@ -50,8 +52,7 @@ struct SerdeDataModel<'a> {
     tuple: (i32, i32),
     map: HashMap<i32, String>,
     plain_struct: PlainStruct,
-    an_enum: Enum,
-    */
+    enums: Vec<Enum>,
 }
 
 
@@ -75,9 +76,11 @@ fn main() {
         string: "test",
         owned_string: "owned".to_owned(),
         bytes: &[1, 2, 3, 4],
-        owned_bytes: vec![1, 2, 3, 4],
-        /*
-        option: Some(1),
+        owned_bytes: vec![5, 6, 7, 8],
+        unoptimized_bytes: &[9, 10, 11, 12],
+        unoptimized_owned_bytes: vec![13, 14, 15, 16],
+        option_some: Some(1),
+        option_none: None,
         unit: (),
         unit_struct: UnitStruct,
         newtype_struct: NewtypeStruct(4),
@@ -85,12 +88,16 @@ fn main() {
         tuple: (8, 888),
         map,
         plain_struct: PlainStruct { a: 12, b: 13 },
-        an_enum: Enum::StructVariant { x: 77, y: 666 },
-        */
+        enums: vec![
+            Enum::UnitVariant,
+            Enum::NewtypeVariant(8),
+            Enum::TupleVariant(144, 288),
+            Enum::StructVariant { x: 77, y: 666 },
+        ],
     };
 
     let bytes = nachricht_serde::to_bytes(&data).unwrap();
-    //dbg!(&bytes);
+    println!("{:02x?}", bytes);
 
     let field = nachricht::Field::decode(&bytes).unwrap();
     dbg!(field);
