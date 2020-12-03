@@ -2,5 +2,6 @@
 members = [
         "nachricht",
         "nachricht-serde",
+        "nachricht-nq",
         "example",
 ]

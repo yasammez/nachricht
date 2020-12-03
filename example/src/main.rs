@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 
 #[derive(Serialize, Deserialize, PartialEq)]
 struct UnitStruct;
@@ -97,11 +98,11 @@ fn main() {
     };
 
     let bytes = nachricht_serde::to_bytes(&data).unwrap();
-    println!("{:02x?}", bytes);
+    std::io::stdout().write_all(&bytes);
 
-    let field = nachricht::Field::decode(&bytes).unwrap();
-    dbg!(field);
+    //let field = nachricht::Field::decode(&bytes).unwrap();
+    //dbg!(field);
 
-    let decoded = nachricht_serde::from_bytes(&bytes).unwrap();
-    dbg!(data == decoded);
+    //let decoded = nachricht_serde::from_bytes(&bytes).unwrap();
+    //dbg!(data == decoded);
 }
