@@ -17,9 +17,9 @@ impl std::error::Error for EncodeError {
 
 impl Display for EncodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        match *self {
-            EncodeError::Io(_) => f.write_str("Error when writing bytes"),
-            EncodeError::Length(value) => f.write_str(&format!("Couldn't encode length {}: exceeds limit", value)),
+        match self {
+            EncodeError::Io(e) => write!(f, "IO Error when writing bytes: {}", e),
+            EncodeError::Length(value) => write!(f, "Couldn't encode length {}: exceeds limit", value),
         }
     }
 }
@@ -59,10 +59,10 @@ impl Display for DecodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             DecodeError::Eof => f.write_str("Unexpected end of buffer while decoding"),
-            DecodeError::Code(t) => f.write_str(&format!("Unexpected code {} while decoding lead byte", t)),
-            DecodeError::Length(value) => f.write_str(&format!("Couldn't decode length: {} exceeds limit", value)),
-            DecodeError::Utf8(_) => f.write_str("String slice was not valid Utf-8"),
-            DecodeError::FixedValue(value) => f.write_str(&format!("Unrecognized value {} for Code 'Fixed'", value)),
+            DecodeError::Code(t) => write!(f, "Unexpected code {} while decoding header", t),
+            DecodeError::Length(value) => write!(f, "Couldn't decode length: {} exceeds limit", value),
+            DecodeError::Utf8(e) => write!(f, "String slice was not valid Utf-8: {}", e),
+            DecodeError::FixedValue(value) => write!(f, "Unrecognized value {} for Code 'Fixed'", value),
             DecodeError::DuplicateKey => f.write_str("A key was followed directly by a key which is illegal"),
         }
     }

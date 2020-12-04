@@ -26,7 +26,5 @@ map gets translated to a container in which every field is named.
 * Container gibt Länge in Bytes statt Elementen an?
 * Menschenlesbare Repräsentation parsen und rendern
 * Serialisierung von Enums verbessern: braucht man so viele Container?
-* nq: Prettyprinting
 * nq: Parsing
 * nq: Escaping
-* nq: Darstellung von Keys: # & @ ' ! $ ...
