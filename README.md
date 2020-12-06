@@ -14,7 +14,7 @@ map gets translated to a container in which every field is named.
 
 ## TODO
 
-* ser/de sollten Value nicht referenzieren
+* de sollten Value nicht referenzieren
 * Don't repeat yourself in ser/de implementieren
 * Slicezugriffe schöner machen (ReadIO-Trait wie in CBOR?)
 * Dokumentieren
@@ -24,7 +24,6 @@ map gets translated to a container in which every field is named.
 * Fehler verbessern
 * Fehlerpfade testen
 * Container gibt Länge in Bytes statt Elementen an?
-* Menschenlesbare Repräsentation parsen und rendern
 * Serialisierung von Enums verbessern: braucht man so viele Container?
 * nq: Parsing
 * nq: Escaping

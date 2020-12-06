@@ -1,5 +1,5 @@
 use serde::{ser, Serialize};
-use nachricht::{Value, Field, Sign, Header, Code, EncodeError};
+use nachricht::{Fixed, Header, Code, EncodeError};
 use std::io::Write;
 
 use crate::error::{Error, Result};
@@ -37,7 +37,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<()> {
-        Field { name: None, value: Value::Bool(v) }.encode(&mut self.output)?;
+        match v {
+            true => Header(Code::Fixed, Fixed::True.to_bits()),
+            false => Header(Code::Fixed, Fixed::False.to_bits()),
+        }.encode(&mut self.output)?;
         Ok(())
     }
 
@@ -54,7 +57,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_i64(self, v: i64) -> Result<()> {
-        Field { name: None, value: Value::Int(if v < 0 { Sign::Neg } else { Sign::Pos }, v.abs() as u64) }.encode(&mut self.output)?;
+        Header(if v < 0 { Code::Intn } else { Code::Intp }, v.abs() as u64).encode(&mut self.output)?;
         Ok(())
     }
 
@@ -71,17 +74,19 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
-        Field { name: None, value: Value::Int(Sign::Pos, v) }.encode(&mut self.output)?;
+        Header(Code::Intp, v).encode(&mut self.output)?;
         Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
-        Field { name: None, value: Value::F32(v) }.encode(&mut self.output)?;
+        Header(Code::Fixed, Fixed::F32.to_bits()).encode(&mut self.output)?;
+        self.output.write_all(&v.to_be_bytes()).map_err(EncodeError::from)?;
         Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> Result<()> {
-        Field { name: None, value: Value::F64(v) }.encode(&mut self.output)?;
+        Header(Code::Fixed, Fixed::F64.to_bits()).encode(&mut self.output)?;
+        self.output.write_all(&v.to_be_bytes()).map_err(EncodeError::from)?;
         Ok(())
     }
 
@@ -90,17 +95,19 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
-        Field { name: None, value: Value::Str(v) }.encode(&mut self.output)?;
+        Header(Code::Str, v.len() as u64).encode(&mut self.output)?;
+        self.output.write_all(v.as_bytes()).map_err(EncodeError::from)?;
         Ok(())
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        Field { name: None, value: Value::Bytes(v) }.encode(&mut self.output)?;
+        Header(Code::Bytes, v.len() as u64).encode(&mut self.output)?;
+        self.output.write_all(v).map_err(EncodeError::from)?;
         Ok(())
     }
 
     fn serialize_none(self) -> Result<()> {
-        Field { name: None, value: Value::Unit }.encode(&mut self.output)?;
+        Header(Code::Fixed, Fixed::Unit.to_bits()).encode(&mut self.output)?;
         Ok(())
     }
 
@@ -109,20 +116,16 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_unit(self) -> Result<()> {
-        Field { name: None, value: Value::Unit }.encode(&mut self.output)?;
+        Header(Code::Fixed, Fixed::Unit.to_bits()).encode(&mut self.output)?; // TODO: können wir hieraus ein NOP machen?
         Ok(())
     }
 
-    fn serialize_unit_struct(self, name: &'static str) -> Result<()> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
         self.serialize_unit()
     }
 
-    fn serialize_unit_variant(self, _name: &'static str, index: u32, variant: &'static str) -> Result<()> {
-        match self.style {
-            Style::Named => Field { name: None, value: Value::Str(variant) }.encode(&mut self.output)?,
-            Style::Unnamed => Field { name: None, value: Value::Int(Sign::Pos, index as u64) }.encode(&mut self.output)?,
-        };
-        Ok(())
+    fn serialize_unit_variant(self, _name: &'static str, _index: u32, variant: &'static str) -> Result<()> {
+       self.serialize_str(variant)
     }
 
     fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, value: &T) -> Result<()> {

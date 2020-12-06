@@ -7,6 +7,7 @@
 //! field's content.
 
 use crate::error::*;
+use crate::fixed::*;
 use std::io::Write;
 
 #[derive(Debug, PartialEq)]

@@ -4,6 +4,7 @@
 mod error;
 mod header;
 mod field;
+mod fixed;
 
 #[doc(hidden)]
 pub use field::*;
@@ -13,3 +14,6 @@ pub use error::*;
 
 #[doc(hidden)]
 pub use header::*;
+
+#[doc(hidden)]
+pub use fixed::*;
