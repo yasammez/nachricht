@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use serde::de::{self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor};
-use nachricht::*;
-use std::convert::{TryFrom, TryInto};
+use nachricht::{DecodeError, Code, Fixed, Header};
+use nachricht::{Field, Value}; // TODO: loswerden
+use std::convert::{TryInto, TryFrom};
 
 use crate::error::{Error, Result};
 
@@ -26,42 +27,76 @@ pub fn from_bytes<'a, T: Deserialize<'a>>(s: &'a [u8]) -> Result<T> {
 }
 
 impl<'de> Deserializer<'de> {
-    fn decode_int(&mut self) -> Result<i128> {
-        let (field, tail) = Field::decode(self.input)?;
+
+    #[inline]
+    fn decode_header(&mut self) -> Result<(Code, u64)> {
+        let (Header(code, value), tail) = Header::decode(self.input)?;
         self.input = tail;
-        match &field.value {
-            Value::Int(s,val) => Ok(match s { Sign::Pos => *val as i128, Sign::Neg => -(*val as i128) }),
+        Ok((code, value))
+    }
+
+    #[inline]
+    fn decode_fixed(&mut self) -> Result<Fixed> {
+        let (code, value) = self.decode_header()?;
+        match code {
+            Code::Fixed => Ok(Fixed::from_bits(value)?),
+            _ => Err(Error::Unexpected)
+        }
+    }
+
+    #[inline]
+    fn decode_int(&mut self) -> Result<i128> {
+        let (code, value) = self.decode_header()?;
+        match code {
+            Code::Intp => Ok(value as i128),
+            Code::Intn => Ok(-(value as i128)),
             _ => Err(Error::Unexpected),
         }
     }
+
+    #[inline]
+    fn decode_slice(&mut self, len: u64) -> Result<&'de [u8]> {
+        if self.input.len() < len as usize {
+            Err(Error::Decode(DecodeError::Eof))
+        } else {
+            let tmp = &self.input[.. len as usize];
+            self.input = &self.input[len as usize ..];
+            Ok(tmp)
+        }
+    }
+
 }
 
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        // Don't advance the cursor
-        // TODO: This is (very) slow for containers!
-        match field.value {
-            Value::Unit => self.deserialize_unit(visitor),
-            Value::Bool(_) => self.deserialize_bool(visitor),
-            Value::F32(_) => self.deserialize_f32(visitor),
-            Value::F64(_) => self.deserialize_f64(visitor),
-            Value::Bytes(_) => self.deserialize_bytes(visitor),
-            Value::Int(_,_) => self.deserialize_i64(visitor),
-            Value::Str(_) => self.deserialize_str(visitor),
-            Value::Container(_) => self.deserialize_seq(visitor), // TODO: wie unterscheide ich zwischen seq, map, struct und enum?
+        let (Header(code, value), _) = Header::decode(self.input)?;
+        // Don't advance the cursor!
+        match code {
+            Code::Fixed => {
+                match Fixed::from_bits(value)? {
+                    Fixed::Unit => visitor.visit_unit(),
+                    Fixed::True => visitor.visit_bool(true),
+                    Fixed::False => visitor.visit_bool(false),
+                    Fixed::F32 => self.deserialize_f32(visitor),
+                    Fixed::F64 => self.deserialize_f64(visitor),
+                }
+            },
+            Code::Bytes => self.deserialize_bytes(visitor),
+            Code::Intp | Code::Intn => self.deserialize_i64(visitor),
+            Code::Str => self.deserialize_str(visitor),
+            Code::Container => self.deserialize_seq(visitor),
+            Code::Key => self.deserialize_any(visitor), // TODO: nicht ganz akkurat, doppelte Keys sind verboten
+            Code::Reserved => Err(Error::Decode(DecodeError::Code(code.to_bits()))),
         }
     }
 
     fn deserialize_bool<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        // TODO: refactor this, it is repeated a lot
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::Bool(value) => visitor.visit_bool(*value),
-            _ => Err(Error::Unexpected),
+        match self.decode_fixed()? {
+            Fixed::True => visitor.visit_bool(true),
+            Fixed::False => visitor.visit_bool(false),
+            __ => Err(Error::Unexpected),
         }
     }
 
@@ -98,37 +133,33 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_f32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::F32(value) => visitor.visit_f32(*value),
+        match self.decode_fixed()? {
+            Fixed::F32 => visitor.visit_f32(<f32>::from_be_bytes(self.decode_slice(4)?.try_into().unwrap())),
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_f64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::F64(value) => visitor.visit_f64(*value),
+        match self.decode_fixed()? {
+            Fixed::F64 => visitor.visit_f64(<f64>::from_be_bytes(self.decode_slice(8)?.try_into().unwrap())),
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_char<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::Str(value) if value.len() == 1 => visitor.visit_char(value.chars().next().unwrap()),
+        let (code, value) = self.decode_header()?;
+        match code {
+            Code::Str if value == 1 => {
+                visitor.visit_char(self.decode_slice(1)?[0] as char)
+            }
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::Str(value) => visitor.visit_borrowed_str(value),
+        let (code, value) = self.decode_header()?;
+        match code {
+            Code::Str => visitor.visit_borrowed_str(std::str::from_utf8(self.decode_slice(value)?)?),
             _ => Err(Error::Unexpected),
         }
     }
@@ -138,118 +169,118 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     fn deserialize_bytes<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
+        let (code, value) = self.decode_header()?;
         match code {
-            Code::Bytes | Code::Container => { // TODO: absolutely no sanity checks here!
-                self.input = &tail[value as usize ..];
-                visitor.visit_borrowed_bytes(&tail[.. value as usize])
+            Code::Bytes => visitor.visit_borrowed_bytes(self.decode_slice(value)?),
+            Code::Container => {
+                let mut bytes = Vec::<u8>::with_capacity(value as usize);
+                for _ in 0..value {
+                    bytes.push(self.decode_int()?.try_into()?);
+                }
+                visitor.visit_byte_buf(bytes)
             },
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_byte_buf<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
+        let (code, value) = self.decode_header()?;
         match code {
-            Code::Bytes | Code::Container => { // TODO: absolutely no sanity checks here!
-                self.input = &tail[value as usize ..];
-                visitor.visit_byte_buf(tail[.. value as usize].to_vec())
-            },
+            Code::Bytes => visitor.visit_byte_buf(self.decode_slice(value)?.to_vec()),
+            Code::Container => {
+                let mut bytes = Vec::with_capacity(value as usize);
+                for _ in 0..value {
+                    bytes.push(self.decode_int()?.try_into()?);
+                }
+                visitor.visit_byte_buf(bytes)
+            }
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        match &field.value {
-            Value::Unit => {
-                self.input = tail;
-                visitor.visit_none()
+        let (Header(code, value), tail) = Header::decode(self.input)?;
+        match code {
+            Code::Fixed => {
+                match Fixed::from_bits(value)? {
+                    Fixed::Unit => { 
+                        self.input = tail; 
+                        visitor.visit_none() 
+                    },
+                    _ => visitor.visit_some(self),
+                }
             },
             _ => visitor.visit_some(self),
         }
     }
 
     fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?;
-        self.input = tail;
-        match &field.value {
-            Value::Unit => visitor.visit_unit(),
+        match self.decode_fixed()? {
+            Fixed::Unit => visitor.visit_unit(),
             _ => Err(Error::Unexpected),
         }
     }
 
-    fn deserialize_unit_struct<V: Visitor<'de>>(self, name: &'static str, visitor: V) -> Result<V::Value> {
+    fn deserialize_unit_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value> {
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V: Visitor<'de>>(self, name: &'static str, visitor: V) -> Result<V::Value> {
+    fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value> {
         visitor.visit_newtype_struct(self)
     }
 
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
-        self.input = tail;
+        let (code, value) = self.decode_header()?;
         match code {
             Code::Container => visitor.visit_seq(SeqDeserializer::new(&mut self, value)),
             _ => Err(Error::Unexpected),
         }
     }
 
-    fn deserialize_tuple<V: Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value> {
+    fn deserialize_tuple<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value> {
         self.deserialize_seq(visitor)
     }
 
-    fn deserialize_tuple_struct<V: Visitor<'de>>(self, name: &'static str, len: usize, visitor: V) -> Result<V::Value> {
+    fn deserialize_tuple_struct<V: Visitor<'de>>(self, _name: &'static str, _len: usize, visitor: V) -> Result<V::Value> {
         self.deserialize_seq(visitor)
     }
 
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
-        self.input = tail;
+        let (code, value) = self.decode_header()?;
         match code {
             Code::Container => visitor.visit_map(MapDeserializer::new(&mut self, value)),
             _ => Err(Error::Unexpected),
         }
     }
 
-    fn deserialize_struct<V: Visitor<'de>>(mut self, name: &'static str, fields: &'static [&'static str], visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
-        self.input = tail;
+    fn deserialize_struct<V: Visitor<'de>>(mut self, _name: &'static str, _fields: &'static [&'static str], visitor: V) -> Result<V::Value> {
+        let (code, value) = self.decode_header()?;
         match code {
             Code::Container => visitor.visit_map(StructDeserializer::new(&mut self, value)),
             _ => Err(Error::Unexpected),
         }
     }
 
-    fn deserialize_enum<V: Visitor<'de>>(self, name: &'static str, variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
-        self.input = tail;
+    fn deserialize_enum<V: Visitor<'de>>(self, _name: &'static str, _variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
+        let (code, value) = self.decode_header()?;
         match code {
-            Code::Str => {
-                self.input = &tail[value as usize ..];
-                let name = std::str::from_utf8(&tail[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
-                visitor.visit_enum(name.into_deserializer())
-            },
+            Code::Str => visitor.visit_enum(std::str::from_utf8(self.decode_slice(value)?).map_err(|e| <DecodeError>::from(e))?.into_deserializer()),
             Code::Container => visitor.visit_enum(EnumDeserializer::new(&mut *self)),
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_identifier<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (Header(code, value), tail) = Header::decode(self.input)?;
+        let (code, value) = self.decode_header()?;
         match code {
-            Code::Key => {
-                self.input = &tail[value as usize ..];
-                let string = std::str::from_utf8(&tail[..value as usize]).map_err(|e| <DecodeError>::from(e))?; // TODO: panic! im slice access
-                visitor.visit_borrowed_str(string)
-            },
+            Code::Key => visitor.visit_borrowed_str(std::str::from_utf8(self.decode_slice(value)?).map_err(|e| <DecodeError>::from(e))?),
             _ => Err(Error::Unexpected)
         }
     }
 
     fn deserialize_ignored_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (field, tail) = Field::decode(self.input)?; // TODO: Wenn Header.1 für Container die Länge in Bytes enthielte müsste man den Inhalt nicht dekodieren
+        // FIXME: wie überspringt man möglichst schnell einen Container?
+        let (field, tail) = Field::decode(self.input)?;
         self.input = tail;
         visitor.visit_bool(true)
     }

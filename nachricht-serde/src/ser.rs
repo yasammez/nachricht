@@ -146,7 +146,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
                 Header(Code::Container, l as u64).encode(&mut self.output)?;
                 Ok(self)
             },
-            None => Err(Error::Length),
+            None => Err(Error::Length), // TODO: maximale Zahl an value bytes reservieren und beim beenden der Sequence die Länge eintragen
         }
     }
 
@@ -172,7 +172,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
                 Header(Code::Container, (len as u64) << 1).encode(&mut self.output)?;
                 Ok(self)
             },
-            None => Err(Error::Length)
+            None => Err(Error::Length) // TODO: maximale Zahl an value bytes reservieren und beim beenden der Sequence die Länge eintragen
         }
     }
 

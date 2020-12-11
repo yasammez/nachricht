@@ -1,4 +1,5 @@
 use crate::header::{Header, Code};
+use crate::fixed::Fixed;
 use crate::error::*;
 use std::mem::size_of;
 use std::io::Write;
@@ -36,13 +37,6 @@ enum Decodeable<'a> {
     Key(&'a str),
 }
 
-// Constants for code `Fixed`
-const UNIT:  u64 = 0;
-const TRUE:  u64 = 1;
-const FALSE: u64 = 2;
-const F32:   u64 = 3;
-const F64:   u64 = 4;
-
 impl<'a> Field<'a> {
 
     pub fn encode<W: Write>(&self, w: &mut W) -> Result<usize, EncodeError> {
@@ -76,15 +70,15 @@ impl<'a> Value<'a> {
 
     pub fn encode<W: Write>(&self, w: &mut W) -> Result<usize, EncodeError> {
         match &*self {
-            Value::Unit => Header(Code::Fixed, UNIT).encode(w),
-            Value::Bool(value) => Header(Code::Fixed, if *value { TRUE } else { FALSE }).encode(w),
+            Value::Unit => Header(Code::Fixed, Fixed::Unit.to_bits()).encode(w),
+            Value::Bool(value) => Header(Code::Fixed, (if *value { Fixed::True } else { Fixed::False }).to_bits()).encode(w),
             Value::F32(value) => {
-                let mut c = Header(Code::Fixed, F32).encode(w)?;
+                let mut c = Header(Code::Fixed, Fixed::F32.to_bits()).encode(w)?;
                 c += Self::encode_f32(*value, w)?;
                 Ok(c)
             }
             Value::F64(value) => {
-                let mut c = Header(Code::Fixed, F64).encode(w)?;
+                let mut c = Header(Code::Fixed, Fixed::F64.to_bits()).encode(w)?;
                 c += Self::encode_f64(*value, w)?;
                 Ok(c)
             },
@@ -142,25 +136,24 @@ impl<'a> Decodeable<'a> {
                 Ok((Self::Val(Value::Container(fields)), buf))
             },
             Code::Fixed     => {
-                match header.1 {
-                    x if x == UNIT => Ok((Self::Val(Value::Unit), buf)),
-                    x if x == TRUE => Ok((Self::Val(Value::Bool(true)), buf)),
-                    x if x == FALSE => Ok((Self::Val(Value::Bool(false)), buf)),
-                    x if x == F32 => {
+                match Fixed::from_bits(header.1)? {
+                    Fixed::Unit => Ok((Self::Val(Value::Unit), buf)),
+                    Fixed::True => Ok((Self::Val(Value::Bool(true)), buf)),
+                    Fixed::False => Ok((Self::Val(Value::Bool(false)), buf)),
+                    Fixed::F32 => {
                         if buf.len() < 4 {
                             Err(DecodeError::Eof)
                         } else {
                             Ok((Self::Val(Value::F32(<f32>::from_be_bytes(buf[..4].try_into().unwrap()))), &buf[4..]))
                         }
                     },
-                    x if x == F64 => {
+                    Fixed::F64 => {
                         if buf.len() < 8 {
                             Err(DecodeError::Eof)
                         } else {
                             Ok((Self::Val(Value::F64(<f64>::from_be_bytes(buf[..8].try_into().unwrap()))), &buf[8..]))
                         }
                     },
-                    i => Err(DecodeError::FixedValue(i))
                 }
             },
             Code::Reserved  => Err(DecodeError::Code(header.0 as u8)),
