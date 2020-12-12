@@ -54,7 +54,7 @@ map gets translated to a container in which every field is named.
 
 ## Data model
 
-There are four small or fixed (because they do not need additional size information) and six variable length types.
+There are four small or fixed (because they do not need additional size information) and five variable length types.
 
 +-----------+-----------------------------+------------------------+-----------------------------------------------------+
 | Type      | number of possible values   | Textual representation | Description                                         |
@@ -64,22 +64,16 @@ There are four small or fixed (because they do not need additional size informat
 | F32       | 2^32                        | 123.456                | 32 bit floating point number                        |
 | F64       | 2^64                        | 123.456                | 64 bit floating point number                        |
 +-----------+-----------------------------+------------------------+-----------------------------------------------------+
-| Intp      | 2^64                        | +123                   | positive 64 bit integer                             |
-| Intn      | 2^64                        | -123                   | negative 64 bit integer, encoded as abs(1 + value)  |
+| Int       | 2^65                        | +123, -123             | signed 65 bit integer                               |
 | Bytes     | $\sum\_{k=0}^{2^64}(2^3)^k$ | [01, ab, d8]           | opaque array of bytes, useful for nesting           |
 | String    | ?                           | "hello world"          | must be valid UTF-8; length in bytes not codepoints |
-| Key       | ?                           | $id, $'with spaces'    | the following item must be a value                  |
-| Ref       | 2^64                        | @0, @1                 | usually not printed, refers to a previous key       | 
-| Container | $\infty$                    | ( **value**,\* )       | length in values, not bytes                         |
+| Key       | ?                           | id=, 'with spaces'=    | the following item must be a value                  |
+| Container | $\infty$                    | (**value**,\*)         | length in values, not bytes                         |
 +-----------|-----------------------------+------------------------+-----------------------------------------------------+
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
 key types a represented as containers with alternating key and value entries.
-
-Integers are split into positive and negative because in standard two-complement representation, every negative integer
-has its most significant bit set, therefore rendering packing impossible. The 1-offset is to save an additional value
-byte in edge cases (-256 for instance) and because having two different representations of zero would be redundant.
 
 ## Wire format
 
@@ -104,44 +98,63 @@ partition the byte into two parts: a three-bit code and a five-bit unsigned inte
 The code defines the major type of the item while `sz` defines either its `value` or length according to the following
 tables.
 
-+------+--------+-------------------+-----------------------------------+
-| code | binary | meaning           | meaning of `value`                |
-+------+--------+-------------------+-----------------------------------+
-|    0 |   b000 | Container (lower) | length in fields OR a fixed type  |
-|    1 |   b001 | Container (upper) | length in fields                  |
-|    2 |   b010 | Intp              | value                             |
-|    3 |   b011 | Intn              | abs(1 + value)                    |
-|    4 |   b100 | Bytes             | length in bytes                   |
-|    5 |   b101 | String            | length in bytes                   |
-|    6 |   b110 | Key               | length in bytes                   |
-|    7 |   b111 | Ref               | index into already seen keys      |
-+------+--------+-------------------+-----------------------------------+
++------+--------+-------------------+----------------------------------------------+
+| code | binary | meaning           | meaning of `value`                           |
++------+--------+-------------------+----------------------------------------------+
+|    0 |   b000 | Bytes             | length in bytes                              |
+|    1 |   b001 | Intp              | value                                        |
+|    2 |   b010 | Intn              | abs(1 + value)                               |
+|    3 |   b011 | Container         | length in fields OR a fixed type             |
+|    4 |   b100 | String            | length in bytes                              |
+|    5 |   b101 | Symbol            | length in bytes                              |
+|    6 |   b110 | Key               | length in bytes                              |
+|    7 |   b111 | Ref               | index into symbol table                      |
++------+--------+-------------------+----------------------------------------------+
 
-+--------------------+--------------------------------------+
-| sz (code > 1)      | meaning                              |
-+--------------------+--------------------------------------+
-|  0 - 23            | `value` equals `sz`                  |
-| 24 - 31            | `value` in 32 - `sz` following bytes |
-+--------------------+--------------------------------------+
++---------------+--------------------------------------+
+| sz (code > 0) | meaning                              |
++---------------+--------------------------------------+
+|  0 - 23       | `value` equals `sz`                  |
+| 24 - 31       | `value` in 32 - `sz` following bytes |
++---------------+--------------------------------------+
 
-This table only holds true for five of the six variable length types. Since we only have seven big types (integers being
-separated into positive and negative ones) to encode and five additional values which do not need size information,
-containers get two codes, allowing for a six-bit `sz`. This case can be easily distinguished by the lead byte beginning
-with two zero bits. The possible values are used as following.
+This table only holds true for seven of the eight codes. Since we have five additional values which do not need size
+information, one type has to sacrifice these from its `sz` parameter space, limiting the amount of values that can be
+encoded without additional length bytes. The `Bytes` type has been chosen for this because I expect typical payloads of
+that type to exceed a length of 23 in most cases anyway. The possible values are used as following.
 
-+---------------------+--------------------------------------+
-| sz (code <= 1)      | meaning                              |
-+---------------------+--------------------------------------+
-|       0             | null                                 |
-|       1             | true                                 |
-|       2             | false                                |
-|       3             | F32 in following four bytes          |
-|       4             | F64 in following eight bytes         |
-|  5 - 55             | `value` equals `sz` - 5              |
-| 56 - 63             | `value` in 64 - `sz` following bytes |
-+---------------------+--------------------------------------+
++---------------+--------------------------------------+
+| sz (code = 0) | meaning                              |
++---------------+--------------------------------------+
+|       0       | null                                 |
+|       1       | true                                 |
+|       2       | false                                |
+|       3       | F32 in following four bytes          |
+|       4       | F64 in following eight bytes         |
+|  5 - 23       | `value` equals `sz` - 5              |
+| 24 - 31       | `value` in 32 - `sz` following bytes |
++---------------+--------------------------------------+
 
 The pattern has been chosen so that the octect `0x00` equals the nachricht value `null`.
+
+### Integer encoding
+
+Integers are split into positive and negative because in standard two-complement representation, every negative integer
+has its most significant bit set, therefore rendering packing impossible. The 1-offset is to save an additional value
+byte in edge cases (-256 for instance) and because having two different representations of zero would be redundant. The
+rather unusual i65 datatype is the smallest type that allows encoding of either u64 or i64 values.
+
+### The symbol table
+
+When serializing large sequences of structs in JSON or msgpack, there is a lot of redundancy in the encoding of the
+keys. To alleviate this cost, every key that gets serialized is also referenced into a symbol table, the first key
+getting index zero, the second key index one, and so on. When a key is repeated, for instance when serializing another
+struct of the same type, a reference can be used instead of a repetition of the key. Depending on the number of keys
+(and thus the size of the symbol table) and  their values, this can save a lot of bytes on wire. Furthermore, since
+there can be repeated strings in value position as well (think of enum variants), a code `Symbol` exists, which has
+exactly the same semantics as `String` but also introduces its value into the symbol table. Because the distinction
+between keys and values is important, a decoder needs to track if an encountered value is a key or a symbol in its
+symbol table for correct deserialization.
 
 ## Prior Art and when to use it
 

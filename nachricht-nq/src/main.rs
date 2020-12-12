@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn print_field(field: &Field) -> String {
     let name = match field.name {
-        Some(n) => format!("${}:", n),
+        Some(n) => format!("{} -> ", n),
         None => "".into(),
     };
     let value = match &field.value {
