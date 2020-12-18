@@ -42,8 +42,6 @@ struct SerdeDataModel<'a> {
     bytes: &'a [u8],
     #[serde(with = "serde_bytes")]
     owned_bytes: Vec<u8>,
-    unoptimized_bytes: &'a [u8],
-    unoptimized_owned_bytes: Vec<u8>,
     option_some: Option<i8>,
     option_none: Option<i8>,
     unit: (),
@@ -78,8 +76,6 @@ fn main() {
         owned_string: "owned".to_owned(),
         bytes: &[1, 2, 3, 4],
         owned_bytes: vec![5, 6, 7, 8],
-        unoptimized_bytes: &[9, 10, 11, 12],
-        unoptimized_owned_bytes: vec![13, 14, 15, 16],
         option_some: Some(1),
         option_none: None,
         unit: (),
@@ -100,9 +96,6 @@ fn main() {
     let bytes = nachricht_serde::to_bytes(&data).unwrap();
     std::io::stdout().write_all(&bytes);
 
-    //let field = nachricht::Field::decode(&bytes).unwrap();
-    //dbg!(field);
-
-    //let decoded = nachricht_serde::from_bytes(&bytes).unwrap();
-    //dbg!(data == decoded);
+    let decoded = nachricht_serde::from_bytes(&bytes).unwrap();
+    dbg!(data == decoded);
 }

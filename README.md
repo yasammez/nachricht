@@ -60,7 +60,7 @@ There are four small or fixed (because they do not need additional size informat
 | F32       | 2^32                        | 123.456                | 32 bit floating point number                     |
 | F64       | 2^64                        | 123.456                | 64 bit floating point number                     |
 +-----------+-----------------------------+------------------------+--------------------------------------------------+
-| Int       | 2^65                        | +123, -123             | signed 65 bit integer                            |
+| Int       | 2^65                        | 123, -123              | signed 65 bit integer                            |
 | Bytes     | $\sum\_{k=0}^{2^64}(2^3)^k$ | [01, ab, d8]           | opaque array of bytes, useful for nesting        |
 | String    | ?                           | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
 | Symbol    | ?                           | #red                   | Same semantics as String, for enums and atoms    |

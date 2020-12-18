@@ -197,16 +197,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_bytes<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        match self.decode_header()? {
+    fn deserialize_bytes<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
+        let header = self.decode_header()?;
+        match header {
             Header::Bin(v) => visitor.visit_borrowed_bytes(self.decode_slice(v)?),
-            Header::Bag(v) => {
-                let mut bytes = Vec::with_capacity(v);
-                for _ in 0..v {
-                    bytes.push(self.decode_int()?.try_into()?);
-                }
-                visitor.visit_byte_buf(bytes)
-            },
+            Header::Bag(v) => visitor.visit_seq(SeqDeserializer::new(&mut self, v)), // This will not work with currenet serde without serde_bytes!
             _ => Err(Error::Unexpected),
         }
     }
@@ -220,13 +215,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                     bytes.push(self.decode_int()?.try_into()?);
                 }
                 visitor.visit_byte_buf(bytes)
-            }
+            },
             _ => Err(Error::Unexpected),
         }
     }
 
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
-        let (header, c) = Header::decode(self.input)?;
+        let (header, c) = Header::decode(&self.input[self.pos..])?;
         match header {
             Header::Null => {
                 self.pos += c;
