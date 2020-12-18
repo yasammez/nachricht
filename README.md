@@ -1,15 +1,12 @@
 # nachricht
 
 ## TODO
-* `value` braucht einen anderen Namen
-* de sollten Value nicht referenzieren
-* Don't repeat yourself in ser/de implementieren
+* Readme: `value` braucht einen anderen Namen
 * Dokumentieren
 * Doctests
 * Lizenz wählen (MIT)
-* Serialisierung von Enums verbessern: braucht man so viele Container?
 * nq: Escaping
-* Keine \*-Imports
+* de: Fehler mit Position pimpen
 
 This is a data serialization format and implementation heavily inspired by [msgpack](https://msgpack.org/),
 [CBOR](https://cbor.io/) and [RION](http://tutorials.jenkov.com/rion/rion-encoding.html).

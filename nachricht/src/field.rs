@@ -27,6 +27,34 @@ pub struct Field<'a> {
     pub value: Value<'a>,
 }
 
+impl<'a> std::fmt::Display for Field<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self.name {
+            Some(n) => format!("{} = ", n), // TODO: escaping
+            None => "".into(),
+        };
+        let value = match &self.value {
+            Value::Null => "null".into(),
+            Value::Bool(true) => "true".into(),
+            Value::Bool(false) => "false".into(),
+            Value::F32(f) => format!("{}", f),
+            Value::F64(f) => format!("{}", f),
+            Value::Bytes(bytes) => format!("{:02x?}", bytes), // TODO: andere Darstellung? base64?
+            Value::Int(s, num) => format!("{}{}", match s { Sign::Pos => "", Sign::Neg => "-" }, num),
+            Value::Str(value) => format!("\"{}\"", value.replace("\\", "\\\\").replace("\"", "\\\"")),
+            Value::Symbol(value) => format!("#{}", if value.contains(" ") || value.contains(",") {
+                format!("\"{}\"", value.replace("\"", "\\\""))
+            } else {
+                (*value).into()
+            }),
+            Value::Container(fields) => format!("(\n{}\n)", fields.iter()
+                .flat_map(|field| format!("{},", field).lines().map(|line| format!("  {}", line)).collect::<Vec<String>>())
+                .collect::<Vec<String>>().join("\n")),
+        };
+        write!(f, "{}{}", name, value)
+    }
+}
+
 #[derive(PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum Refable {

@@ -72,7 +72,7 @@ fn main() {
         float_f32: 1234.5678,
         float_f64: 1234.56789e17,
         character: 'a',
-        string: "test",
+        string: "this needs \"escaping\"",
         owned_string: "owned".to_owned(),
         bytes: &[1, 2, 3, 4],
         owned_bytes: vec![5, 6, 7, 8],
