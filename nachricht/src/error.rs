@@ -36,8 +36,8 @@ pub enum DecodeError {
     Code(u8),
     Length(u128),
     Utf8(std::str::Utf8Error),
-    FixedValue(u64),
     DuplicateKey,
+    UnknownRef(u64),
 }
 
 impl From<std::str::Utf8Error> for DecodeError {
@@ -62,8 +62,8 @@ impl Display for DecodeError {
             DecodeError::Code(t) => write!(f, "Unexpected code {} while decoding header", t),
             DecodeError::Length(value) => write!(f, "Couldn't decode length: {} exceeds limit", value),
             DecodeError::Utf8(e) => write!(f, "String slice was not valid Utf-8: {}", e),
-            DecodeError::FixedValue(value) => write!(f, "Unrecognized value {} for Code 'Fixed'", value),
             DecodeError::DuplicateKey => f.write_str("A key was followed directly by a key which is illegal"),
+            DecodeError::UnknownRef(value) => write!(f, "Unknown reference {}", value),
         }
     }
 }

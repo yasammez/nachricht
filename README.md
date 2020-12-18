@@ -2,6 +2,7 @@
 
 ## TODO
 * `value` braucht einen anderen Namen
+* u64 vs usize klären!
 * de sollten Value nicht referenzieren
 * Don't repeat yourself in ser/de implementieren
 * Slicezugriffe schöner machen (ReadIO-Trait wie in CBOR?)
@@ -56,20 +57,21 @@ map gets translated to a container in which every field is named.
 
 There are four small or fixed (because they do not need additional size information) and five variable length types.
 
-+-----------+-----------------------------+------------------------+-----------------------------------------------------+
-| Type      | number of possible values   | Textual representation | Description                                         |
-+-----------+-----------------------------+------------------------+-----------------------------------------------------|
-| Unit      | 1                           | null                   | also known as nill                                  |
-| Bool      | 2                           | true, false            | a simple boolean                                    |
-| F32       | 2^32                        | 123.456                | 32 bit floating point number                        |
-| F64       | 2^64                        | 123.456                | 64 bit floating point number                        |
-+-----------+-----------------------------+------------------------+-----------------------------------------------------+
-| Int       | 2^65                        | +123, -123             | signed 65 bit integer                               |
-| Bytes     | $\sum\_{k=0}^{2^64}(2^3)^k$ | [01, ab, d8]           | opaque array of bytes, useful for nesting           |
-| String    | ?                           | "hello world"          | must be valid UTF-8; length in bytes not codepoints |
-| Key       | ?                           | id=, 'with spaces'=    | the following item must be a value                  |
-| Container | $\infty$                    | (**value**,\*)         | length in values, not bytes                         |
-+-----------|-----------------------------+------------------------+-----------------------------------------------------+
++-----------+-----------------------------+------------------------+--------------------------------------------------+
+| Type      | number of possible values   | Textual representation | Description                                      |
++-----------+-----------------------------+------------------------+--------------------------------------------------|
+| Null      | 1                           | null                   | also known as nil or unit                        |
+| Bool      | 2                           | true, false            | a simple boolean                                 |
+| F32       | 2^32                        | 123.456                | 32 bit floating point number                     |
+| F64       | 2^64                        | 123.456                | 64 bit floating point number                     |
++-----------+-----------------------------+------------------------+--------------------------------------------------+
+| Int       | 2^65                        | +123, -123             | signed 65 bit integer                            |
+| Bytes     | $\sum\_{k=0}^{2^64}(2^3)^k$ | [01, ab, d8]           | opaque array of bytes, useful for nesting        |
+| String    | ?                           | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
+| Symbol    | ?                           | #red                   | Same semantics as String, for enums and atoms    |
+| Key       | ?                           | id=, 'with spaces'=    | the following item must be a value               |
+| Container | $\infty$                    | (**value**,\*)         | length in values, not bytes                      |
++-----------|-----------------------------+------------------------+--------------------------------------------------+
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
@@ -98,18 +100,18 @@ partition the byte into two parts: a three-bit code and a five-bit unsigned inte
 The code defines the major type of the item while `sz` defines either its `value` or length according to the following
 tables.
 
-+------+--------+-------------------+----------------------------------------------+
-| code | binary | meaning           | meaning of `value`                           |
-+------+--------+-------------------+----------------------------------------------+
-|    0 |   b000 | Bytes             | length in bytes                              |
-|    1 |   b001 | Intp              | value                                        |
-|    2 |   b010 | Intn              | abs(1 + value)                               |
-|    3 |   b011 | Container         | length in fields OR a fixed type             |
-|    4 |   b100 | String            | length in bytes                              |
-|    5 |   b101 | Symbol            | length in bytes                              |
-|    6 |   b110 | Key               | length in bytes                              |
-|    7 |   b111 | Ref               | index into symbol table                      |
-+------+--------+-------------------+----------------------------------------------+
++------+--------+------------------------------+-----------------------------------+
+| code | binary | mnemonic | meaning           | meaning of `value`                |
++------+--------+----------+-------------------+-----------------------------------+
+|    0 |   b000 | Bin      | Bytes             | length in bytes OR a fixed type   |
+|    1 |   b001 | Pos      | positive integer  | value                             |
+|    2 |   b010 | Neg      | negative integer  | abs(1 + value)                    |
+|    3 |   b011 | Bag      | Container         | length in fields                  |
+|    4 |   b100 | Str      | String            | length in bytes                   |
+|    5 |   b101 | Sym      | Symbol            | length in bytes                   |
+|    6 |   b110 | Key      | Key               | length in bytes                   |
+|    7 |   b111 | Ref      | Reference         | index into symbol table           |
++------+--------+----------+-------------------------------------------------------+
 
 +---------------+--------------------------------------+
 | sz (code > 0) | meaning                              |
@@ -151,17 +153,19 @@ keys. To alleviate this cost, every key that gets serialized is also referenced 
 getting index zero, the second key index one, and so on. When a key is repeated, for instance when serializing another
 struct of the same type, a reference can be used instead of a repetition of the key. Depending on the number of keys
 (and thus the size of the symbol table) and  their values, this can save a lot of bytes on wire. Furthermore, since
-there can be repeated strings in value position as well (think of enum variants), a code `Symbol` exists, which has
-exactly the same semantics as `String` but also introduces its value into the symbol table. Because the distinction
-between keys and values is important, a decoder needs to track if an encountered value is a key or a symbol in its
-symbol table for correct deserialization.
+there can be repeated strings in value position as well (think of enum variants or erlang atoms), a code `Symbol`
+exists, which has exactly the same semantics as `String` but also introduces its value into the symbol table. Because
+the distinction between keys and values is important, a decoder needs to track if an encountered value is a key or a
+symbol in its symbol table for correct deserialization.
 
 ## Prior Art and when to use it
 
 ### Binary
 * **msgpack**: when you need something like nachricht that is mature and battle-tested
-* **CBOR**: when you need something that is an IETF standard
+* **CBOR**: when you need support for streaming or something that is an IETF standard
+* **RION**: when you encode mainly CSV data
 * **bincode**: when message size and schema evolution are non-factors and simplicity and speed reign supreme
+* **ion**: when you work at amazon
 * **flatbuffers**: when you have very large messages that get written seldom and read often but only partially
 * **capnp**: when you would use flatbuffers but also need a mighty capability-based RPC framework
 * **protobuf**: never
