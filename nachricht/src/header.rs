@@ -57,7 +57,7 @@ impl Header {
             Header::F32                     => { w.write_all(&[self.code() << 5 | 3])?; Ok(1) },
             Header::F64                     => { w.write_all(&[self.code() << 5 | 4])?; Ok(1) },
             Header::Pos(i)                  => self.encode_long_header(i, w),
-            Header::Neg(0)                  => Header::Pos(0).encode(w),
+            Header::Neg(0)                  => { w.write_all(&[1 << 5 | 0])?; Ok(1) },
             Header::Neg(i)                  => self.encode_long_header(i - 1, w),
             Header::Bin(i)
                 | Header::Bag(i)
@@ -119,13 +119,13 @@ impl Header {
         if sz < 24 {
             Ok((sz as u64, 0))
         } else {
-            let sz = sz as usize - 23;
-            if buf.len() < sz {
+            let bytes = sz as usize - 23;
+            if buf.len() < bytes {
                 Err(DecodeError::Eof)
             } else {
                 let mut tmp = [0u8; 8];
-                tmp[8 - sz..].copy_from_slice(&buf[..sz]);
-                Ok((<u64>::from_be_bytes(tmp), sz))
+                tmp[8 - bytes..].copy_from_slice(&buf[..bytes]);
+                Ok((<u64>::from_be_bytes(tmp), bytes))
             }
         }
     }
@@ -207,6 +207,14 @@ mod tests {
         let mut buf = Vec::new();
         let _ = Header::Neg(0).encode(&mut buf);
         assert_eq!(Header::Pos(0), Header::decode(&buf).unwrap().0);
+    }
+
+    #[test]
+    fn negative_max() {
+        let buf = [0x5f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        assert_eq!(Header::Neg(u64::MAX), Header::decode(&buf).unwrap().0);
+        let buf = [0x5f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe];
+        assert_eq!(Header::Neg(u64::MAX), Header::decode(&buf).unwrap().0);
     }
 
     #[test]

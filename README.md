@@ -112,7 +112,7 @@ tables.
 | sz (code > 0) | meaning                              |
 +---------------+--------------------------------------+
 |  0 - 23       | `value` equals `sz`                  |
-| 24 - 31       | `value` in 32 - `sz` following bytes |
+| 24 - 31       | `value` in `sz` - 23 following bytes |
 +---------------+--------------------------------------+
 
 This table only holds true for seven of the eight codes. Since we have five additional values which do not need size
@@ -129,7 +129,7 @@ that type to exceed a length of 23 in most cases anyway. The possible values are
 |       3       | F32 in following four bytes          |
 |       4       | F64 in following eight bytes         |
 |  5 - 23       | `value` equals `sz` - 5              |
-| 24 - 31       | `value` in 32 - `sz` following bytes |
+| 24 - 31       | `value` in `sz` - 23 following bytes |
 +---------------+--------------------------------------+
 
 The pattern has been chosen so that the octect `0x00` equals the nachricht value `null`.
@@ -138,8 +138,11 @@ The pattern has been chosen so that the octect `0x00` equals the nachricht value
 
 Integers are split into positive and negative because in standard two-complement representation, every negative integer
 has its most significant bit set, therefore rendering packing impossible. The 1-offset is to save an additional value
-byte in edge cases (-256 for instance) and because having two different representations of zero would be redundant. The
-rather unusual i65 datatype is the smallest type that allows encoding of either u64 or i64 values.
+byte in edge cases (-256 for instance) and because having two different representations of zero would be redundant. This
+creates one superfluous case of `[0x5f 0xff 0xff 0xff 0xff 0xff 0xff 0xff 0xff]` which an encoder must never produce and
+a decoder must always interpet as -18,446,744,073,709,551,615. This decision has been made to shift the inevitable
+redundancy problem to a less frequently used place in the parameter space. The rather unusual i65 datatype is the
+smallest type that allows encoding of either u64 or i64 values.
 
 ### The symbol table
 
