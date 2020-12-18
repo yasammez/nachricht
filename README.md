@@ -2,16 +2,11 @@
 
 ## TODO
 * `value` braucht einen anderen Namen
-* u64 vs usize klären!
 * de sollten Value nicht referenzieren
 * Don't repeat yourself in ser/de implementieren
-* Slicezugriffe schöner machen (ReadIO-Trait wie in CBOR?)
 * Dokumentieren
 * Doctests
-* Readme schreiben
-* Lizenz wählen
-* Fehlermeldungen verbessern
-* Fehlerpfade testen
+* Lizenz wählen (MIT)
 * Serialisierung von Enums verbessern: braucht man so viele Container?
 * nq: Escaping
 * Keine \*-Imports

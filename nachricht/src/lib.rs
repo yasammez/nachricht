@@ -1,5 +1,5 @@
-//! All encoding functions take `&self` and a writer and return the amount of bytes written. All
-//! decoding functions take a buffer and return `Self` and the unprocessed tail of the buffer.
+//! All encoding functions take `&self` and a writer and return the amount of written bytes. All
+//! decoding functions take a buffer and return `Self` and the number of consumed bytes.
 
 mod error;
 mod header;

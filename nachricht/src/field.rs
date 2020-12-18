@@ -1,8 +1,9 @@
 use crate::header::Header;
-use crate::error::*;
+use crate::error::{DecodeError, DecoderError, EncodeError};
 use std::mem::size_of;
 use std::io::Write;
 use std::convert::TryInto;
+use std::str::from_utf8;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Sign { Pos, Neg }
@@ -63,19 +64,19 @@ impl<'w, W: Write> Encoder<'w, W> {
                 Ok(c + size_of::<f64>())
             },
             Value::Bytes(v)  => {
-                c += Header::Bin(v.len() as u64).encode(self.writer)?;
+                c += Header::Bin(v.len()).encode(self.writer)?;
                 self.writer.write_all(v)?;
                 Ok(c + v.len())
             },
             Value::Int(s, v) => { match s { Sign::Pos => Header::Pos(*v), Sign::Neg => Header::Neg(*v) }.encode(self.writer) },
             Value::Str(v) => {
-                c += Header::Str(v.len() as u64).encode(self.writer)?;
+                c += Header::Str(v.len()).encode(self.writer)?;
                 self.writer.write_all(v.as_bytes())?;
                 Ok(c + v.len())
             },
             Value::Symbol(v) => self.encode_refable(v, Refable::Sym),
             Value::Container(inner) => {
-                c += Header::Bag(inner.len() as u64).encode(self.writer)?;
+                c += Header::Bag(inner.len()).encode(self.writer)?;
                 for field in inner.iter() {
                     c += self.encode_inner(field)?;
                 }
@@ -86,10 +87,10 @@ impl<'w, W: Write> Encoder<'w, W> {
 
     fn encode_refable<'a>(&mut self, key: &'a str, kind: Refable) -> Result<usize, EncodeError> {
         match self.symbols.iter().enumerate().find(|(_, (k, v))| *k == kind && v == key) {
-            Some((i, _)) => Header::Ref(i as u64).encode(self.writer),
+            Some((i, _)) => Header::Ref(i).encode(self.writer),
             None         => {
                 self.symbols.push((kind, key.to_owned()));
-                match kind { Refable::Key => Header::Key(key.len() as u64), Refable::Sym => Header::Sym(key.len() as u64) }.encode(self.writer)?;
+                match kind { Refable::Key => Header::Key(key.len()), Refable::Sym => Header::Sym(key.len()) }.encode(self.writer)?;
                 self.writer.write_all(key.as_bytes())?;
                 Ok(1 + key.len())
             }
@@ -106,23 +107,23 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
 
-    pub fn decode<B: ?Sized + AsRef<[u8]>>(buf: &'a B) -> Result<(Field<'a>, u64), DecodeError> {
+    pub fn decode<B: ?Sized + AsRef<[u8]>>(buf: &'a B) -> Result<(Field<'a>, usize), DecoderError> {
         let mut decoder = Self { buf: buf.as_ref(), symbols: Vec::new(), pos: 0 };
-        let field = decoder.decode_field()?;
-        Ok((field, decoder.pos as u64))
+        let field = decoder.decode_field().map_err(|e| e.at(decoder.pos))?;
+        Ok((field, decoder.pos))
     }
 
     fn decode_field(&mut self) -> Result<Field<'a>, DecodeError> {
         let (header, c) = Header::decode(&self.buf[self.pos..])?;
-        self.pos += c as usize;
+        self.pos += c;
         match header {
             Header::Key(v) => {
-                let key = std::str::from_utf8(&self.decode_slice(v as usize)?)?;
+                let key = from_utf8(&self.decode_slice(v)?)?;
                 self.symbols.push((Refable::Key, key));
                 Ok(Field { name: Some(key), value: self.decode_value()? })
             },
             Header::Ref(v) => {
-                match self.symbols.get(v as usize) {
+                match self.symbols.get(v) {
                     Some((Refable::Sym, _)) => Ok(Field { name: None, value: self.decode_value_inner(header)? }),
                     Some((Refable::Key, key)) => Ok(Field { name: Some(key), value: self.decode_value()? }),
                     _ => Err(DecodeError::UnknownRef(v)),
@@ -134,7 +135,7 @@ impl<'a> Decoder<'a> {
 
     fn decode_value(&mut self) -> Result<Value<'a>, DecodeError> {
         let (header, c) = Header::decode(&self.buf[self.pos..])?;
-        self.pos += c as usize;
+        self.pos += c;
         self.decode_value_inner(header)
     }
 
@@ -145,27 +146,30 @@ impl<'a> Decoder<'a> {
             Header::False  => Ok(Value::Bool(false)),
             Header::F32    => Ok(Value::F32(<f32>::from_be_bytes(self.decode_slice(4)?.try_into().unwrap()))),
             Header::F64    => Ok(Value::F64(<f64>::from_be_bytes(self.decode_slice(8)?.try_into().unwrap()))),
-            Header::Bin(v) => Ok(Value::Bytes(self.decode_slice(v as usize)?)),
+            Header::Bin(v) => Ok(Value::Bytes(self.decode_slice(v)?)),
             Header::Pos(v) => Ok(Value::Int(Sign::Pos, v)),
             Header::Neg(v) => Ok(Value::Int(Sign::Neg, v)),
             Header::Bag(v) => {
-                let mut fields = Vec::with_capacity(v as usize);
-                for _ in 0..v as usize {
+                let mut fields = Vec::with_capacity(v);
+                for _ in 0..v {
                     fields.push(self.decode_field()?);
                 }
                 Ok(Value::Container(fields))
             },
-            Header::Str(v) => Ok(Value::Str(std::str::from_utf8(&self.decode_slice(v as usize)?)?)),
+            Header::Str(v) => Ok(Value::Str(from_utf8(&self.decode_slice(v)?)?)),
             Header::Sym(v) => {
-                let symbol = std::str::from_utf8(&self.decode_slice(v as usize)?)?;
+                let symbol = from_utf8(&self.decode_slice(v)?)?;
                 self.symbols.push((Refable::Sym, symbol));
                 Ok(Value::Symbol(symbol))
             },
-            Header::Key(_) => Err(DecodeError::DuplicateKey),
+            Header::Key(v) => {
+                let key = from_utf8(&self.decode_slice(v)?)?;
+                Err(DecodeError::DuplicateKey(key.to_string()))
+            },
             Header::Ref(v) => {
-                match self.symbols.get(v as usize) {
+                match self.symbols.get(v) {
                     Some((Refable::Sym, symbol)) => Ok(Value::Symbol(symbol)),
-                    Some((Refable::Key, _)) => Err(DecodeError::DuplicateKey),
+                    Some((Refable::Key, key)) => Err(DecodeError::DuplicateKey(key.to_string())),
                     None => Err(DecodeError::UnknownRef(v))
                 }
             },
@@ -186,7 +190,7 @@ impl<'a> Decoder<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::{Field, Value, Sign, Encoder, Decoder};
+    use super::{Field, Value, Sign, Encoder, Decoder, DecodeError};
 
     #[test]
     fn simple_unnamed_fields() {
@@ -273,6 +277,18 @@ mod test {
         assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![
                 Field { name: None, value: Value::Container(vec![ Field { name: Some("key"), value: Value::Symbol("VALUE") } ]) }; 3
             ])}, &mut buf);
+    }
+
+    #[test]
+    fn errors() {
+        let buf = [];
+        assert!(matches!(Decoder::decode(&buf).unwrap_err().into_inner(), DecodeError::Eof));
+        let buf = [4 << 5 | 2, 0xc3, 0x28];
+        assert!(matches!(Decoder::decode(&buf).unwrap_err().into_inner(), DecodeError::Utf8(_)));
+        let buf = [6 << 5 | 1, 0x21, 7 << 5 | 0];
+        assert!(matches!(Decoder::decode(&buf).unwrap_err().into_inner(), DecodeError::DuplicateKey(key) if key == "!"));
+        let buf = [7 << 5 | 0];
+        assert!(matches!(Decoder::decode(&buf).unwrap_err().into_inner(), DecodeError::UnknownRef(0)));
     }
 
     fn assert_roundtrip(field: Field, buf: &mut Vec<u8>) {

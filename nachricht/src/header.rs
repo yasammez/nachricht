@@ -6,13 +6,17 @@
 //! depends on the code: it can either define the value of the whole field or the length of the
 //! field's content.
 
-use crate::error::*;
+use crate::error::{DecodeError, EncodeError};
+use std::convert::TryFrom;
 use std::io::Write;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Header {
+    /// Also known as unit or nil
     Null,
+    /// The boolean value true
     True,
+    /// The boolean value false
     False,
     /// The following four bytes contain an IEEE-754 32-bit floating point number
     F32,
@@ -20,26 +24,26 @@ pub enum Header {
     F64,
     /// The value describes the length of a following byte array.
     /// Note that this code also contains the five fixed length values.
-    Bin(u64),
+    Bin(usize),
     /// The value describes a postive integer fitting into an u64
     Pos(u64),
     /// The value describes a negative integer whose negative fits into an u64
     Neg(u64),
     /// The value describes the length in fields of a container. the fields follow the header
     /// immediately.
-    Bag(u64),
+    Bag(usize),
     /// The value describes the length in bytes of a following unicode string
-    Str(u64),
+    Str(usize),
     /// A symbol has the same semantics as a string except that it gets pushed into the symbol
     /// table and can be referenced from there
-    Sym(u64),
+    Sym(usize),
     /// The value describes the length in bytes of a following key value. This in itself does not
     /// define a field and thus has to immediately followed by another header whose field will be
     /// named by this key.
-    Key(u64),
+    Key(usize),
     /// A reference into the symbol table. This could resolve to either a symbol (which itself
     /// resolve to a string) or a key.
-    Ref(u64),
+    Ref(usize),
 }
 
 impl Header {
@@ -47,36 +51,23 @@ impl Header {
     /// Returns the number of written bytes
     pub fn encode<W: Write>(&self, w: &mut W) -> Result<usize, EncodeError> {
         match *self {
-            Header::Null         => { w.write_all(&[self.code() << 5 | 0])?; Ok(1) },
-            Header::True         => { w.write_all(&[self.code() << 5 | 1])?; Ok(1) },
-            Header::False        => { w.write_all(&[self.code() << 5 | 2])?; Ok(1) },
-            Header::F32          => { w.write_all(&[self.code() << 5 | 3])?; Ok(1) },
-            Header::F64          => { w.write_all(&[self.code() << 5 | 4])?; Ok(1) },
+            Header::Null                    => { w.write_all(&[self.code() << 5 | 0])?; Ok(1) },
+            Header::True                    => { w.write_all(&[self.code() << 5 | 1])?; Ok(1) },
+            Header::False                   => { w.write_all(&[self.code() << 5 | 2])?; Ok(1) },
+            Header::F32                     => { w.write_all(&[self.code() << 5 | 3])?; Ok(1) },
+            Header::F64                     => { w.write_all(&[self.code() << 5 | 4])?; Ok(1) },
+            Header::Pos(i) | Header::Neg(i) => self.encode_u64(i, w),
             Header::Bin(i)
-                | Header::Pos(i) 
-                | Header::Neg(i) 
-                | Header::Bag(i) 
-                | Header::Str(i) 
-                | Header::Sym(i) 
-                | Header::Key(i) 
-                | Header::Ref(i) => {
-                    let limit = self.sz_limit();
-                    if i < limit as u64 {
-                        w.write_all(&[self.code() << 5 | i as u8 + (24 - limit)])?;
-                        Ok(1)
-                    } else {
-                        let sz = Self::size(i);
-                        let buf = i.to_be_bytes();
-                        w.write_all(&[self.code() << 5 | (sz + 23)])?;
-                        w.write_all(&buf[buf.len() - sz as usize ..])?;
-                        Ok(1 + sz as usize)
-                    }
-                }
+                | Header::Bag(i)
+                | Header::Str(i)
+                | Header::Sym(i)
+                | Header::Key(i)
+                | Header::Ref(i)            => self.encode_u64(Self::to_u64(i)?, w)
         }
     }
 
     /// Returns the decoded header and the number of consumed bytes
-    pub fn decode<B: ?Sized + AsRef<[u8]>>(buf: &B) -> Result<(Self, u64), DecodeError> {
+    pub fn decode<B: ?Sized + AsRef<[u8]>>(buf: &B) -> Result<(Self, usize), DecodeError> {
         let buf = buf.as_ref();
         if buf.len() < 1 {
             return Err(DecodeError::Eof);
@@ -91,23 +82,38 @@ impl Header {
                     2 => Ok((Header::False, 1)),
                     3 => Ok((Header::F32,   1)),
                     4 => Ok((Header::F64,   1)),
-                    x if x < 24 => Ok((Header::Bin(x as u64 - 5), 1)),
-                    x => Self::decode_u64(&buf[1..], x).map(|(i, c)| (Header::Bin(i), c + 1)),
+                    x if x < 24 => Ok((Header::Bin(x as usize - 5), 1)),
+                    x => Self::decode_u64(&buf[1..], x).and_then(|(i, c)| Ok((Header::Bin(Self::to_usize(i)?), c + 1))),
                 }
             },
             1 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Pos(i), c + 1)),
             2 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Neg(i), c + 1)),
-            3 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Bag(i), c + 1)),
-            4 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Str(i), c + 1)),
-            5 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Sym(i), c + 1)),
-            6 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Key(i), c + 1)),
-            7 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Ref(i), c + 1)),
+            3 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Bag(Self::to_usize(i)?), c + 1))),
+            4 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Str(Self::to_usize(i)?), c + 1))),
+            5 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Sym(Self::to_usize(i)?), c + 1))),
+            6 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Key(Self::to_usize(i)?), c + 1))),
+            7 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Ref(Self::to_usize(i)?), c + 1))),
             _ => unreachable!(),
         }
     }
 
     #[inline]
-    fn decode_u64(buf: &[u8], sz: u8) -> Result<(u64, u64), DecodeError> {
+    fn encode_u64<W: Write>(&self, i: u64, w: &mut W) -> Result<usize, EncodeError> {
+        let limit = self.sz_limit();
+        if i < limit as u64 {
+            w.write_all(&[self.code() << 5 | i as u8 + (24 - limit)])?;
+            Ok(1)
+        } else {
+            let sz = Self::size(i);
+            let buf = i.to_be_bytes();
+            w.write_all(&[self.code() << 5 | (sz + 23)])?;
+            w.write_all(&buf[buf.len() - sz as usize ..])?;
+            Ok(1 + sz as usize)
+        }
+    }
+
+    #[inline]
+    fn decode_u64(buf: &[u8], sz: u8) -> Result<(u64, usize), DecodeError> {
         if sz < 24 {
             Ok((sz as u64, 0))
         } else {
@@ -117,7 +123,7 @@ impl Header {
             } else {
                 let mut tmp = [0u8; 8];
                 tmp[8 - sz..].copy_from_slice(&buf[..sz]);
-                Ok((<u64>::from_be_bytes(tmp), sz as u64))
+                Ok((<u64>::from_be_bytes(tmp), sz))
             }
         }
     }
@@ -146,7 +152,7 @@ impl Header {
 
     /// Returns the number of bytes needed to encode this value
     #[inline]
-    pub fn size(value: u64) -> u8 {
+    fn size(value: u64) -> u8 {
         if value < 1 << 8 {
             1
         } else if value < 1 << 16 {
@@ -164,6 +170,16 @@ impl Header {
         } else {
             8
         }
+    }
+
+    #[inline]
+    fn to_usize(value: u64) -> Result<usize, DecodeError> {
+        usize::try_from(value).map_err(|_| DecodeError::Length(value))
+    }
+
+    #[inline]
+    fn to_u64(value: usize) -> Result<u64, EncodeError> {
+        u64::try_from(value).map_err(|_| EncodeError::Length(value))
     }
 
 }
@@ -196,8 +212,8 @@ mod tests {
             if i < 19 {
                 assert_roundtrip(Header::Bin(i), &mut buf);
             }
-            assert_roundtrip(Header::Pos(i), &mut buf);
-            assert_roundtrip(Header::Neg(i), &mut buf);
+            assert_roundtrip(Header::Pos(i as u64), &mut buf);
+            assert_roundtrip(Header::Neg(i as u64), &mut buf);
             assert_roundtrip(Header::Bag(i), &mut buf);
             assert_roundtrip(Header::Str(i), &mut buf);
             assert_roundtrip(Header::Sym(i), &mut buf);
@@ -212,14 +228,14 @@ mod tests {
         // choose large prime number to make this test terminate in acceptable time, in this case
         // (2^59-1)/179951
         for i in (0..u64::MAX).step_by(3_203_431_780_337) {
-            assert_roundtrip(Header::Bin(i), &mut buf);
+            assert_roundtrip(Header::Bin(i as usize), &mut buf);
             assert_roundtrip(Header::Pos(i), &mut buf);
             assert_roundtrip(Header::Neg(i), &mut buf);
-            assert_roundtrip(Header::Bag(i), &mut buf);
-            assert_roundtrip(Header::Str(i), &mut buf);
-            assert_roundtrip(Header::Sym(i), &mut buf);
-            assert_roundtrip(Header::Key(i), &mut buf);
-            assert_roundtrip(Header::Ref(i), &mut buf);
+            assert_roundtrip(Header::Bag(i as usize), &mut buf);
+            assert_roundtrip(Header::Str(i as usize), &mut buf);
+            assert_roundtrip(Header::Sym(i as usize), &mut buf);
+            assert_roundtrip(Header::Key(i as usize), &mut buf);
+            assert_roundtrip(Header::Ref(i as usize), &mut buf);
         }
     }
 
