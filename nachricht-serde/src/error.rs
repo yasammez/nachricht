@@ -11,6 +11,7 @@ pub enum Error {
     Message(String),
     Encode(EncodeError),
     Decode(DecodeError),
+    MapSize(usize),
     Length,
     Trailing,
     Unexpected,
@@ -36,11 +37,12 @@ impl Display for Error {
             Error::Message(msg) => fmt.write_str(msg),
             Error::Encode(e) => write!(fmt, "Encoding error: {}", e.to_string()),
             Error::Decode(e) => write!(fmt, "Decoding error: {}", e.to_string()),
+            Error::MapSize(e) => write!(fmt, "Map size {} exceeds maximum {}", e, usize::MAX >> 1),
             Error::Length => fmt.write_str("Length required"),
             Error::Trailing => fmt.write_str("Trailing characters in input"),
             Error::Unexpected => fmt.write_str("Unexpected type encountered"),
             Error::Utf8(e) => write!(fmt, "Bytes aren't valid Utf-8: {}", e.to_string()),
-            Error::Int => fmt.write_str("Integer didn't fit into a byte"),
+            Error::Int => fmt.write_str("Integer didn't fit into target type"),
         }
     }
 }
@@ -58,7 +60,7 @@ impl From<DecodeError> for Error {
 }
 
 impl From<std::num::TryFromIntError> for Error {
-    fn from(e: std::num::TryFromIntError) -> Error {
+    fn from(_e: std::num::TryFromIntError) -> Error {
         Error::Int
     }
 }

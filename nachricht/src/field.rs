@@ -29,7 +29,7 @@ pub struct Field<'a> {
 
 #[derive(PartialEq, Clone, Copy)]
 #[repr(u8)]
-enum Refable {
+pub enum Refable {
     Sym,
     Key,
 }
