@@ -200,7 +200,7 @@ mod test {
         assert_roundtrip(Field { name: None, value: Value::Bool(false) }, &mut buf);
         for i in (0..u64::MAX).step_by(3_203_431_780_337) {
             assert_roundtrip(Field { name: None, value: Value::Int(Sign::Pos, i) }, &mut buf);
-            assert_roundtrip(Field { name: None, value: Value::Int(Sign::Neg, i) }, &mut buf);
+            assert_roundtrip(Field { name: None, value: Value::Int(Sign::Neg, if i == 0 { 1 } else { i }) }, &mut buf);
         }
     }
 
@@ -223,7 +223,7 @@ mod test {
         assert_roundtrip(Field { name: Some("bool"), value: Value::Bool(false) }, &mut buf);
         for i in (0..u64::MAX).step_by(3_203_431_780_337) {
             assert_roundtrip(Field { name: Some("integer"), value: Value::Int(Sign::Pos, i) }, &mut buf);
-            assert_roundtrip(Field { name: Some("integer"), value: Value::Int(Sign::Neg, i) }, &mut buf);
+            assert_roundtrip(Field { name: Some("integer"), value: Value::Int(Sign::Neg, if i == 0 { 1 } else { i }) }, &mut buf);
         }
     }
 

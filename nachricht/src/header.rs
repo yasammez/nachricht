@@ -56,13 +56,15 @@ impl Header {
             Header::False                   => { w.write_all(&[self.code() << 5 | 2])?; Ok(1) },
             Header::F32                     => { w.write_all(&[self.code() << 5 | 3])?; Ok(1) },
             Header::F64                     => { w.write_all(&[self.code() << 5 | 4])?; Ok(1) },
-            Header::Pos(i) | Header::Neg(i) => self.encode_u64(i, w),
+            Header::Pos(i)                  => self.encode_long_header(i, w),
+            Header::Neg(0)                  => Header::Pos(0).encode(w),
+            Header::Neg(i)                  => self.encode_long_header(i - 1, w),
             Header::Bin(i)
                 | Header::Bag(i)
                 | Header::Str(i)
                 | Header::Sym(i)
                 | Header::Key(i)
-                | Header::Ref(i)            => self.encode_u64(Self::to_u64(i)?, w)
+                | Header::Ref(i)            => self.encode_long_header(Self::to_u64(i)?, w)
         }
     }
 
@@ -87,7 +89,7 @@ impl Header {
                 }
             },
             1 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Pos(i), c + 1)),
-            2 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Neg(i), c + 1)),
+            2 => Self::decode_u64(&buf[1..], sz).map(|(i, c)| (Header::Neg(i.saturating_add(1)), c + 1)),
             3 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Bag(Self::to_usize(i)?), c + 1))),
             4 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Str(Self::to_usize(i)?), c + 1))),
             5 => Self::decode_u64(&buf[1..], sz).and_then(|(i, c)| Ok((Header::Sym(Self::to_usize(i)?), c + 1))),
@@ -98,7 +100,7 @@ impl Header {
     }
 
     #[inline]
-    fn encode_u64<W: Write>(&self, i: u64, w: &mut W) -> Result<usize, EncodeError> {
+    fn encode_long_header<W: Write>(&self, i: u64, w: &mut W) -> Result<usize, EncodeError> {
         let limit = self.sz_limit();
         if i < limit as u64 {
             w.write_all(&[self.code() << 5 | i as u8 + (24 - limit)])?;
@@ -201,6 +203,13 @@ mod tests {
     }
 
     #[test]
+    fn negative_zero() {
+        let mut buf = Vec::new();
+        let _ = Header::Neg(0).encode(&mut buf);
+        assert_eq!(Header::Pos(0), Header::decode(&buf).unwrap().0);
+    }
+
+    #[test]
     fn roundtrip_compact() {
         let mut buf = Vec::new();
         assert_roundtrip(Header::Null, &mut buf);
@@ -213,7 +222,7 @@ mod tests {
                 assert_roundtrip(Header::Bin(i), &mut buf);
             }
             assert_roundtrip(Header::Pos(i as u64), &mut buf);
-            assert_roundtrip(Header::Neg(i as u64), &mut buf);
+            assert_roundtrip(Header::Neg(if i == 0 { 1 } else { i } as u64), &mut buf);
             assert_roundtrip(Header::Bag(i), &mut buf);
             assert_roundtrip(Header::Str(i), &mut buf);
             assert_roundtrip(Header::Sym(i), &mut buf);
@@ -230,7 +239,7 @@ mod tests {
         for i in (0..u64::MAX).step_by(3_203_431_780_337) {
             assert_roundtrip(Header::Bin(i as usize), &mut buf);
             assert_roundtrip(Header::Pos(i), &mut buf);
-            assert_roundtrip(Header::Neg(i), &mut buf);
+            assert_roundtrip(Header::Neg(if i == 0 { 1 } else { i } as u64), &mut buf);
             assert_roundtrip(Header::Bag(i as usize), &mut buf);
             assert_roundtrip(Header::Str(i as usize), &mut buf);
             assert_roundtrip(Header::Sym(i as usize), &mut buf);
