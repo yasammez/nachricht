@@ -1,38 +1,45 @@
+This describes the nachricht data model and wire format, for documentation of the actual Rust crates, see [the
+docs](https://docs.rs/nachricht).
+
 # nachricht
+
+nachricht is a self-describing binary data interchange format that aims for simplicity and small wire size. It is
+heavily inspired by [msgpack](https://msgpack.org/), [CBOR](https://cbor.io/) and
+[RION](http://tutorials.jenkov.com/rion/rion-encoding.html), and uses symbol tables to further reduce the message size
+on wire.
 
 ## TODO
 * Readme: `value` braucht einen anderen Namen
 * Dokumentieren
 * nq: Escaping
 
-This is a data serialization format and implementation heavily inspired by [msgpack](https://msgpack.org/),
-[CBOR](https://cbor.io/) and [RION](http://tutorials.jenkov.com/rion/rion-encoding.html).
-
 ## Why
 
 I made this to learn about serialization and also because I didn't see my ideas fully reflected in any of my references.
 For instance, both msgpack and CBOR allow keys to be anything, which is compatible with YAML at the most (most certainly
 not JSON); on the other hand, RION permits keys to be anywhere which is fine syntactically but makes it semantically
-impossible to parse. In Nachricht, keys are an explicit header type but not a field type, they always need to be
-followed by an actual field whose name they define. In this way, fields can be named or unnamed as they please and hence
+impossible to parse. In nachricht, keys are an explicit header type but not a field type, they always need to be
+followed by an actual value whose name they define. In this way, fields can be named or unnamed as they please and hence
 only one container type is necessary. A JSON array can be represented by a container full of unnamed fields while a JSON
 map gets translated to a container in which every field is named.
 
 ## Goals
 
 ### Goals
-* Small size on wire. We don't want to waste any bits. Do anything for this goal except entropy coding. Pipe the message
-  through gzip if this improves your usecase. If you never transmit messages over flaky network links, check out
-  bincode, which is much simpler to interpret but doesn't pack anything.
-* Fast serialization and deserialization. There is, of course, a trade-off to be made here: zero-copy formats are
+* **Be small on wire.** We don't want to waste any bits. If you never transmit messages over flaky network links, check
+  out bincode, which is much simpler to interpret but doesn't pack anything.
+* **Have a low code footprint.** Do not increase code size unreasonably. Also, nobody likes exploding transitive
+  dependency trees: currently nachricht has no dependencies while nachricht-serde only depends on serde. Try to keep it
+  at that if possible.
+* **Serialize and deserialize fast.** There is, of course, a trade-off to be made here: zero-copy formats are
   insanely fast to decode but force the serializer to pre-compute a lot of pointers. If the sending side has less CPU
   than the receiving side, this isn't optimal. Also, pointers take up space on wire (seee above).
-* Integrate well with serde.
-* Self-describing format, that can be successfully interpreted without a schema. This does not mean that there can't be
-  a schema. In fact, I encourage you to use one. However, schema evolution and discovery are much simpler when schemas
-  are optional. Also, integration with serde is impossible for non self-describing formats (see above).
-* Human readable representation. Interacting with the format should be as easy as `curl | jq` for JSON-delivering
-  webservices. This is why nachricht-nq exists.
+* **Integrate well with serde**.
+* **Be interpretable without a schema.** This does not mean that there *cannot* be a schema. In fact, I encourage you to
+  use one. However, schema evolution and discovery are much simpler when schemas are optional. Also, integration with
+  serde is impossible for non self-describing formats (see above).
+* **Have a human-readable representation.** Interacting with the format should be as easy as `curl | jq` for
+  JSON-delivering webservices. This is why nachricht-nq exists.
 
 ### Non-Goals
 * Easy skip-parsing: this would complicate and slow down encoders by a lot. It would also slow down decoders in certain
@@ -40,7 +47,7 @@ map gets translated to a container in which every field is named.
   make the use of symbol tables impossible. If your usecase involves large messages with only a couple of interesting
   fields at a time, check out flatbuffers or capnp.
 * Extensibility: extensible standards usually create a hell of incompatible implementations just so that everyone can
-  have their pet feature (looking straight at you, CBOR). Let's not go there.
+  have their pet feature. Let's not go there.
 
 ## Data model
 
@@ -69,22 +76,29 @@ All integers and floating point numbers, including length information is stored 
 endian.
 
 The unit of a message in nachricht is called a field. A field consists of a value and an optional key, or name. An item
-is either a key or a value. As keys get en- and decoded, their values are referenced in a list. Therefore, a key can be
-replaced by a reference which only contains the index into this list.
+is either a key or a value. As keys and symbols get en- and decoded, their values are referenced in a table. Therefore,
+a key can be replaced by a reference which only contains the index into this list.
 
 Every item begins with a header which itself consists of a lead byte and zero to eight additional bytes specifying its
-value. We have 256 possible states in the first byte. We want to waste none of them (looking at you, CBOR/RION) and
-simultaneously have a simple algorithm that is easy to implement and verify (looking at you, msgpack). Hence we
-partition the byte into two parts: a three-bit code and a five-bit unsigned integer which we shall call `sz`.
+length. We have 256 possible states in the first byte. We want to waste none of them and simultaneously have a simple
+algorithm that is easy to implement and verify. Hence we partition the byte into two parts: a three-bit code and a
+five-bit unsigned integer which we shall call `sz`.
 
 | code  | sz        |
 |-------|-----------|
 | x x x | y y y y y |
 
-The code defines the major type of the item while `sz` defines either its `value` or length according to the following
-tables.
+`sz` defines either the `payload` of the header or the amount of following bytes containing the `payload` which is
+always an unsigned 64-bit integer.
 
-| code | binary | mnemonic | meaning           | meaning of `value`                |
+| sz (code > 0) | meaning                                |
+|---------------|----------------------------------------|
+|  0 - 23       | `payload` equals `sz`                  |
+| 24 - 31       | `payload` in `sz` - 23 following bytes |
+
+The code defines the major type of the item.
+
+| code | binary | mnemonic | meaning           | meaning of `payload`              |
 |------|--------|----------|-------------------|-----------------------------------|
 |    0 |   b000 | Bin      | Bytes             | length in bytes OR a fixed type   |
 |    1 |   b001 | Pos      | positive integer  | value                             |
@@ -95,25 +109,20 @@ tables.
 |    6 |   b110 | Key      | Key               | length in bytes                   |
 |    7 |   b111 | Ref      | Reference         | index into symbol table           |
 
-| sz (code > 0) | meaning                              |
-|---------------|--------------------------------------|
-|  0 - 23       | `value` equals `sz`                  |
-| 24 - 31       | `value` in `sz` - 23 following bytes |
+Since we have five additional values which do not need size information, one type has to sacrifice these from its `sz`
+parameter space, limiting the amount of values that can be encoded without additional `payload` bytes. The `Bytes` type
+has been chosen for this because I expect typical payloads of that type to exceed a length of 23 in most cases anyway.
+The possible values are used as following.
 
-This table only holds true for seven of the eight codes. Since we have five additional values which do not need size
-information, one type has to sacrifice these from its `sz` parameter space, limiting the amount of values that can be
-encoded without additional length bytes. The `Bytes` type has been chosen for this because I expect typical payloads of
-that type to exceed a length of 23 in most cases anyway. The possible values are used as following.
-
-| sz (code = 0) | meaning                              |
-|---------------|--------------------------------------|
-|       0       | null                                 |
-|       1       | true                                 |
-|       2       | false                                |
-|       3       | F32 in following four bytes          |
-|       4       | F64 in following eight bytes         |
-|  5 - 23       | `value` equals `sz` - 5              |
-| 24 - 31       | `value` in `sz` - 23 following bytes |
+| sz (code = 0) | meaning                                            |
+|---------------|----------------------------------------------------|
+|       0       | null                                               |
+|       1       | true                                               |
+|       2       | false                                              |
+|       3       | F32 in following four bytes                        |
+|       4       | F64 in following eight bytes                       |
+|  5 - 23       | Bytes with `length` equals to `sz` - 5             |
+| 24 - 31       | Bytes where `length` in `sz` - 23 following bytes  |
 
 The pattern has been chosen so that the octect `0x00` equals the nachricht value `null`.
 
@@ -122,8 +131,8 @@ The pattern has been chosen so that the octect `0x00` equals the nachricht value
 Integers are split into positive and negative because in standard two-complement representation, every negative integer
 has its most significant bit set, therefore rendering packing impossible. The 1-offset is to save an additional value
 byte in edge cases (-256 for instance) and because having two different representations of zero would be redundant. This
-creates one superfluous case of `[0x5f 0xff 0xff 0xff 0xff 0xff 0xff 0xff 0xff]` which an encoder must never produce and
-a decoder must always interpet as -18,446,744,073,709,551,615. This decision has been made to shift the inevitable
+creates one superfluous case of `[0x5f 0xff 0xff 0xff 0xff 0xff 0xff 0xff 0xff]` which an encoder *should* never produce
+and a decoder *must* always interpet as -18,446,744,073,709,551,615. This decision has been made to shift the inevitable
 redundancy problem to a less frequently used place in the parameter space. The rather unusual i65 datatype is the
 smallest type that allows encoding of either u64 or i64 values.
 
@@ -145,11 +154,12 @@ symbol in its symbol table for correct deserialization.
 * **msgpack**: when you need something like nachricht that is mature and battle-tested
 * **CBOR**: when you need support for streaming or something that is an IETF standard
 * **RION**: when you encode mainly CSV data
-* **bincode**: when message size and schema evolution are non-factors and simplicity and speed reign supreme
+* **bincode**: when schema evolution is a non-factor and simplicity and speed reign supreme
+* **flatbuffers**: when you have very large messages that read a lot more than frequently than wirtten, but only
+  partially
+* **capnp**: when you would use flatbuffers but also need a mighty, capability-based RPC framework
 * **ion**: when you work at amazon
-* **flatbuffers**: when you have very large messages that get written seldom and read often but only partially
-* **capnp**: when you would use flatbuffers but also need a mighty capability-based RPC framework
-* **protobuf**: never
+* **protobuf**: when you work at google
 
 ### Textual (not necessariliy human-readable)
 * **json**: when you need dead simple interop with javascript
