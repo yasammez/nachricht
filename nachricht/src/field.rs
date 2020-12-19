@@ -1,3 +1,8 @@
+//! The atom of a `nachricht` is the `Field` which consists of an optional name, also known as a key and a `Value`.
+//! Values are encoded on wire as headers and, if necessary, additional bytes which directly follow the header. Keys and
+//! values with datatype `Value::Symbol` can be referenced later within the wire format, so you pay their full bandwidth
+//! costs only once.
+
 use crate::header::Header;
 use crate::error::{DecodeError, DecoderError, EncodeError};
 use std::mem::size_of;
@@ -5,9 +10,13 @@ use std::io::Write;
 use std::convert::TryInto;
 use std::str::from_utf8;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Sign { Pos, Neg }
+/// The sign of an integer. Not that the encoder accepts negative zero but transparently translates it to positive zero.
+/// Likewise, decoders will accept the wire format for negative zero (which can only be achieved by purposefully chosing
+/// an inefficient encoding) but return positive zero, so that testing the output doesn't need to concern itself with
+/// another special case.
+#[derive(Debug, PartialEq, Clone)] pub enum Sign { Pos, Neg }
 
+/// The possible values according to the `nachricht` data model.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value<'a> {
     Null,
@@ -21,6 +30,9 @@ pub enum Value<'a> {
     Container(Vec<Field<'a>>),
 }
 
+/// When encoding struct-like data structures, `name` should be the identifier of the current field. When encoding
+/// sequence-like data, `name` can be omitted. Note that the type of `name` is fixed at `&str`, which means maps with
+/// arbitrary key types need to be encoded as sequences.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Field<'a> {
     pub name: Option<&'a str>,
@@ -39,7 +51,7 @@ impl<'a> std::fmt::Display for Field<'a> {
             Value::Bool(false) => "false".into(),
             Value::F32(f) => format!("{}", f),
             Value::F64(f) => format!("{}", f),
-            Value::Bytes(bytes) => format!("{:02x?}", bytes), // TODO: andere Darstellung? base64?
+            Value::Bytes(bytes) => format!("{:02x?}", bytes), // TODO: base64?
             Value::Int(s, num) => format!("{}{}", match s { Sign::Pos => "", Sign::Neg => "-" }, num),
             Value::Str(value) => format!("\"{}\"", value.replace("\\", "\\\\").replace("\"", "\\\"")),
             Value::Symbol(value) => format!("#{}", if value.contains(" ") || value.contains(",") {
@@ -71,6 +83,8 @@ impl Refable {
     }
 }
 
+/// Used to encode `nachricht` fields. This uses an internal symbol table to allow referencing keys and symbols which
+/// get repeated.
 pub struct Encoder<'w, W: Write> {
     writer: &'w mut W,
     symbols: Vec<(Refable, String)>,
@@ -78,6 +92,7 @@ pub struct Encoder<'w, W: Write> {
 
 impl<'w, W: Write> Encoder<'w, W> {
 
+    /// Encode a field to the given writer. The resulting `usize` is the amount of bytes that got written.
     pub fn encode(field: &Field, writer: &'w mut W) -> Result<usize, EncodeError> {
         Self { writer, symbols: Vec::new() }.encode_inner(field)
     }
@@ -135,7 +150,8 @@ impl<'w, W: Write> Encoder<'w, W> {
     }
 
 }
-
+/// Used to decode `nachricht` fields. This uses an internal symbol table to allow the decoding of encountered
+/// references.
 pub struct Decoder<'a> {
     symbols: Vec<(Refable, &'a str)>,
     buf: &'a [u8],
@@ -144,6 +160,9 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
 
+    /// Decode a single field from the given buffer. All strings, keys, symbols and byte data will be borrowed from the
+    /// buffer instead of copied. This means that the decoded field may only live as long as the buffer does. However,
+    /// some allocations still occur: containers need their own heap space.
     pub fn decode<B: ?Sized + AsRef<[u8]>>(buf: &'a B) -> Result<(Field<'a>, usize), DecoderError> {
         let mut decoder = Self { buf: buf.as_ref(), symbols: Vec::new(), pos: 0 };
         let field = decoder.decode_field().map_err(|e| e.at(decoder.pos))?;
