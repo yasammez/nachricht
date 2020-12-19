@@ -8,11 +8,6 @@ heavily inspired by [msgpack](https://msgpack.org/), [CBOR](https://cbor.io/) an
 [RION](http://tutorials.jenkov.com/rion/rion-encoding.html), and uses symbol tables to further reduce the message size
 on wire.
 
-## TODO
-* Readme: `value` braucht einen anderen Namen
-* Dokumentieren
-* nq: Escaping
-
 ## Why
 
 I made this to learn about serialization and also because I didn't see my ideas fully reflected in any of my references.
@@ -42,12 +37,12 @@ map gets translated to a container in which every field is named.
   JSON-delivering webservices. This is why nachricht-nq exists.
 
 ### Non-Goals
-* Easy skip-parsing: this would complicate and slow down encoders by a lot. It would also slow down decoders in certain
-  circumstances when the size of the decoded type is not known (when nesting containers for instance). Also, it would
-  make the use of symbol tables impossible. If your usecase involves large messages with only a couple of interesting
-  fields at a time, check out flatbuffers or capnp.
-* Extensibility: extensible standards usually create a hell of incompatible implementations just so that everyone can
-  have their pet feature. Let's not go there.
+* **Easy skip-parsing**: this would complicate and slow down encoders by a lot. It would also slow down decoders in
+  certain circumstances when the size of the decoded type is not known (when nesting containers for instance). Also, it
+  would make the use of symbol tables impossible. If your usecase involves large messages with only a couple of
+  interesting fields at a time, check out flatbuffers or capnp.
+* **Extensibility**: extensible standards usually create a hell of incompatible implementations just so that everyone
+  can have their pet feature. Let's not go there.
 
 ## Data model
 

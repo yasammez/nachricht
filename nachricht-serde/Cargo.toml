@@ -2,6 +2,13 @@
 name = "nachricht-serde"
 version = "0.1.0"
 authors = ["Liv <liv.fischer@senacor.com>"]
+license = "MIT"
+description = "Serde bindings for nachricht"
+repository = "https://github.com/yasammez/nachricht"
+documentation = "https://docs.rs/nachricht-serde"
+readme = "../README.md"
+keywords = ["nachricht", "serialization", "serde"]
+categories = ["encoding"]
 edition = "2018"
 
 [dependencies]
