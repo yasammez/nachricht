@@ -150,8 +150,7 @@ symbol in its symbol table for correct deserialization.
 * **CBOR**: when you need support for streaming or something that is an IETF standard
 * **RION**: when you encode mainly CSV data
 * **bincode**: when schema evolution is a non-factor and simplicity and speed reign supreme
-* **flatbuffers**: when you have very large messages that read a lot more than frequently than wirtten, but only
-  partially
+* **flatbuffers**: when you have large messages that are read a lot more frequently than written, but only partially
 * **capnp**: when you would use flatbuffers but also need a mighty, capability-based RPC framework
 * **ion**: when you work at amazon
 * **protobuf**: when you work at google
