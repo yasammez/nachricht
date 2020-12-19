@@ -5,6 +5,7 @@ get something you can make sense of in an instant: where you would write `curl a
 application/json' | jq` you can also write `curl api.example.com/resource -H 'Accept: application/x-nachricht' | nq`.
 
 ```bash
+cargo install nachricht-nq
 echo -en "\x62\x01\x02" | nq
 (
   true,

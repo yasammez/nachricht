@@ -2,6 +2,13 @@
 name = "nachricht-nq"
 version = "0.1.0"
 authors = ["Liv <liv.fischer@senacor.com>"]
+license = "MIT"
+description = "Pretty printing of nachricht messages"
+repository = "https://github.com/yasammez/nachricht"
+documentation = "https://docs.rs/nachricht-nq"
+readme = "README.md"
+keywords = ["nachricht", "serialization"]
+categories = ["encoding"]
 edition = "2018"
 
 [[bin]]

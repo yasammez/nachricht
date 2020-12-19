@@ -6,7 +6,7 @@ license = "MIT"
 description = "Serde bindings for nachricht"
 repository = "https://github.com/yasammez/nachricht"
 documentation = "https://docs.rs/nachricht-serde"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["nachricht", "serialization", "serde"]
 categories = ["encoding"]
 edition = "2018"
@@ -14,4 +14,4 @@ edition = "2018"
 [dependencies]
 
 serde = "1.0.117"
-nachricht = { version = "0.1.0", path = "../nachricht" }
+nachricht = { path = "../nachricht" }
