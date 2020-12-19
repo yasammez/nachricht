@@ -46,18 +46,18 @@ map gets translated to a container in which every field is named.
 
 There are four small or fixed (because they do not need additional size information) and five variable length types.
 
-| Type      | number of possible values   | Textual representation | Description                                      |
-|-----------|-----------------------------|------------------------|--------------------------------------------------|
-| Null      | 1                           | null                   | also known as nil or unit                        |
-| Bool      | 2                           | true, false            | a simple boolean                                 |
-| F32       | 2^32                        | 123.456                | 32 bit floating point number                     |
-| F64       | 2^64                        | 123.456                | 64 bit floating point number                     |
-| Int       | 2^65                        | 123, -123              | signed 65 bit integer                            |
-| Bytes     | $\sum\_{k=0}^{2^64}(2^3)^k$ | [01, ab, d8]           | opaque array of bytes, useful for nesting        |
-| String    | ?                           | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
-| Symbol    | ?                           | #red                   | Same semantics as String, for enums and atoms    |
-| Key       | ?                           | id=, 'with spaces'=    | the following item must be a value               |
-| Container | $\infty$                    | (**value**,\*)         | length in values, not bytes                      |
+| Type      | Textual representation | Description                                      |
+|-----------|------------------------|--------------------------------------------------|
+| Null      | null                   | also known as nil or unit                        |
+| Bool      | true, false            | a simple boolean                                 |
+| F32       | 123.456                | 32 bit floating point number                     |
+| F64       | 123.456                | 64 bit floating point number                     |
+| Int       | 123, -123              | signed 65 bit integer                            |
+| Bytes     | [01, ab, d8]           | opaque array of bytes, useful for nesting        |
+| String    | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
+| Symbol    | #red                   | Same semantics as String, for enums and atoms    |
+| Key       | id=, 'with spaces'=    | the following item must be a value               |
+| Container | (1, "two")             | length in values, not bytes                      |
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
@@ -77,18 +77,15 @@ value. We have 256 possible states in the first byte. We want to waste none of t
 simultaneously have a simple algorithm that is easy to implement and verify (looking at you, msgpack). Hence we
 partition the byte into two parts: a three-bit code and a five-bit unsigned integer which we shall call `sz`.
 
-+-------+-----------+
 | code  | sz        |
-+-------+-----------+
+|-------|-----------|
 | x x x | y y y y y |
-+-------+-----------+
 
 The code defines the major type of the item while `sz` defines either its `value` or length according to the following
 tables.
 
-+------+--------+------------------------------+-----------------------------------+
 | code | binary | mnemonic | meaning           | meaning of `value`                |
-+------+--------+----------+-------------------+-----------------------------------+
+|------|--------|----------|-------------------|-----------------------------------|
 |    0 |   b000 | Bin      | Bytes             | length in bytes OR a fixed type   |
 |    1 |   b001 | Pos      | positive integer  | value                             |
 |    2 |   b010 | Neg      | negative integer  | abs(1 + value)                    |
@@ -97,23 +94,19 @@ tables.
 |    5 |   b101 | Sym      | Symbol            | length in bytes                   |
 |    6 |   b110 | Key      | Key               | length in bytes                   |
 |    7 |   b111 | Ref      | Reference         | index into symbol table           |
-+------+--------+----------+-------------------------------------------------------+
 
-+---------------+--------------------------------------+
 | sz (code > 0) | meaning                              |
-+---------------+--------------------------------------+
+|---------------|--------------------------------------|
 |  0 - 23       | `value` equals `sz`                  |
 | 24 - 31       | `value` in `sz` - 23 following bytes |
-+---------------+--------------------------------------+
 
 This table only holds true for seven of the eight codes. Since we have five additional values which do not need size
 information, one type has to sacrifice these from its `sz` parameter space, limiting the amount of values that can be
 encoded without additional length bytes. The `Bytes` type has been chosen for this because I expect typical payloads of
 that type to exceed a length of 23 in most cases anyway. The possible values are used as following.
 
-+---------------+--------------------------------------+
 | sz (code = 0) | meaning                              |
-+---------------+--------------------------------------+
+|---------------|--------------------------------------|
 |       0       | null                                 |
 |       1       | true                                 |
 |       2       | false                                |
@@ -121,7 +114,6 @@ that type to exceed a length of 23 in most cases anyway. The possible values are
 |       4       | F64 in following eight bytes         |
 |  5 - 23       | `value` equals `sz` - 5              |
 | 24 - 31       | `value` in `sz` - 23 following bytes |
-+---------------+--------------------------------------+
 
 The pattern has been chosen so that the octect `0x00` equals the nachricht value `null`.
 
