@@ -1,6 +1,5 @@
 use nachricht::*;
 use std::io::{self, Read};
-use std::error::Error;
 use anyhow::{Context, Result};
 
 fn main() -> Result<()> {
