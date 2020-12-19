@@ -46,21 +46,18 @@ map gets translated to a container in which every field is named.
 
 There are four small or fixed (because they do not need additional size information) and five variable length types.
 
-+-----------+-----------------------------+------------------------+--------------------------------------------------+
 | Type      | number of possible values   | Textual representation | Description                                      |
-+-----------+-----------------------------+------------------------+--------------------------------------------------|
+|-----------|-----------------------------|------------------------|--------------------------------------------------|
 | Null      | 1                           | null                   | also known as nil or unit                        |
 | Bool      | 2                           | true, false            | a simple boolean                                 |
 | F32       | 2^32                        | 123.456                | 32 bit floating point number                     |
 | F64       | 2^64                        | 123.456                | 64 bit floating point number                     |
-+-----------+-----------------------------+------------------------+--------------------------------------------------+
 | Int       | 2^65                        | 123, -123              | signed 65 bit integer                            |
 | Bytes     | $\sum\_{k=0}^{2^64}(2^3)^k$ | [01, ab, d8]           | opaque array of bytes, useful for nesting        |
 | String    | ?                           | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
 | Symbol    | ?                           | #red                   | Same semantics as String, for enums and atoms    |
 | Key       | ?                           | id=, 'with spaces'=    | the following item must be a value               |
 | Container | $\infty$                    | (**value**,\*)         | length in values, not bytes                      |
-+-----------|-----------------------------+------------------------+--------------------------------------------------+
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
