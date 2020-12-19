@@ -4,5 +4,10 @@ version = "0.1.0"
 authors = ["Liv <liv.fischer@senacor.com>"]
 edition = "2018"
 
+[[bin]]
+name = "nq"
+path = "src/main.rs"
+
 [dependencies]
 nachricht = { path = "../nachricht" }
+anyhow = "1.0"

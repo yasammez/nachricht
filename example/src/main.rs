@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use anyhow::{Context, Result};
 
 #[derive(Serialize, Deserialize, PartialEq)]
 struct UnitStruct;
@@ -42,6 +43,7 @@ struct SerdeDataModel<'a> {
     bytes: &'a [u8],
     #[serde(with = "serde_bytes")]
     owned_bytes: Vec<u8>,
+    unoptimized_bytes: Vec<u8>,
     option_some: Option<i8>,
     option_none: Option<i8>,
     unit: (),
@@ -55,7 +57,7 @@ struct SerdeDataModel<'a> {
 }
 
 
-fn main() {
+fn main() -> Result<()> {
     let mut map = HashMap::new();
     map.insert(1, String::from("Eins"));
     map.insert(2, String::from("Zwei"));
@@ -76,6 +78,7 @@ fn main() {
         owned_string: "owned".to_owned(),
         bytes: &[1, 2, 3, 4],
         owned_bytes: vec![5, 6, 7, 8],
+        unoptimized_bytes: vec![37, 38, 39, 40],
         option_some: Some(1),
         option_none: None,
         unit: (),
@@ -93,9 +96,10 @@ fn main() {
         ],
     };
 
-    let bytes = nachricht_serde::to_bytes(&data).unwrap();
-    std::io::stdout().write_all(&bytes);
+    let bytes = nachricht_serde::to_bytes(&data).context("Failed to serialize")?;
+    std::io::stdout().write_all(&bytes).context("Failed to write bytes")?;
 
-    let decoded = nachricht_serde::from_bytes(&bytes).unwrap();
+    let decoded = nachricht_serde::from_bytes(&bytes).context("Failed to deserialize")?;
     dbg!(data == decoded);
+    Ok(())
 }

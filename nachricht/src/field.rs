@@ -62,6 +62,15 @@ pub enum Refable {
     Key,
 }
 
+impl Refable {
+    pub fn name(&self) -> &'static str {
+        match *self {
+            Refable::Sym => "Sym",
+            Refable::Key => "Key",
+        }
+    }
+}
+
 pub struct Encoder<'w, W: Write> {
     writer: &'w mut W,
     symbols: Vec<(Refable, String)>,

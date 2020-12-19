@@ -48,6 +48,25 @@ pub enum Header {
 
 impl Header {
 
+    /// Returns the mnemonic of the header. This is useful for error messages.
+    pub fn name(&self) -> &'static str {
+        match *self {
+            Header::Null   => "Null",
+            Header::True   => "True",
+            Header::False  => "False",
+            Header::F32    => "F32",
+            Header::F64    => "F64",
+            Header::Pos(_) => "Pos",
+            Header::Neg(_) => "Neg",
+            Header::Bin(_) => "Bin",
+            Header::Bag(_) => "Bag",
+            Header::Str(_) => "Str",
+            Header::Sym(_) => "Sym",
+            Header::Key(_) => "Key",
+            Header::Ref(_) => "Ref",
+        }
+    }
+
     /// Returns the number of written bytes
     pub fn encode<W: Write>(&self, w: &mut W) -> Result<usize, EncodeError> {
         match *self {

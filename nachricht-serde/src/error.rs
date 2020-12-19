@@ -7,16 +7,44 @@ use nachricht::{EncodeError, DecodeError};
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
+pub struct DeserializationError {
+    inner: Error,
+    at: usize,
+}
+
+impl std::error::Error for DeserializationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.inner)
+    }
+}
+
+impl Display for DeserializationError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{} at input position {}", self.inner, self.at)
+    }
+}
+
+#[derive(Debug)]
 pub enum Error {
-    Message(String),
-    Encode(EncodeError),
+    // Decode
     Decode(DecodeError),
-    MapSize(usize),
-    Length,
     Trailing,
-    Unexpected,
-    Utf8(Utf8Error),
+    UnexpectedHeader(&'static [&'static str], &'static str),
+    UnexpectedRefable(&'static str, &'static str),
     Int,
+    Utf8(Utf8Error),
+    // Encode
+    Length,
+    Encode(EncodeError),
+    MapSize(usize),
+    // Both
+    Message(String),
+}
+
+impl Error {
+    pub fn at(self, at: usize) -> DeserializationError {
+        DeserializationError { inner: self, at }
+    }
 }
 
 impl ser::Error for Error {
@@ -40,7 +68,8 @@ impl Display for Error {
             Error::MapSize(e) => write!(fmt, "Map size {} exceeds maximum {}", e, usize::MAX >> 1),
             Error::Length => fmt.write_str("Length required"),
             Error::Trailing => fmt.write_str("Trailing characters in input"),
-            Error::Unexpected => fmt.write_str("Unexpected type encountered"),
+            Error::UnexpectedHeader(expected, actual) => write!(fmt, "Unexpected header: expected one of ({}), found {}", expected.join(" ,"), actual),
+            Error::UnexpectedRefable(expected, actual) => write!(fmt, "Unexpected refable: expected {}, found {}", expected, actual),
             Error::Utf8(e) => write!(fmt, "Bytes aren't valid Utf-8: {}", e.to_string()),
             Error::Int => fmt.write_str("Integer didn't fit into target type"),
         }

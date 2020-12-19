@@ -3,10 +3,10 @@
 ## TODO
 * Readme: `value` braucht einen anderen Namen
 * Dokumentieren
+* Beispiel
 * Doctests
 * Lizenz wählen (MIT)
 * nq: Escaping
-* de: Fehler mit Position pimpen
 
 This is a data serialization format and implementation heavily inspired by [msgpack](https://msgpack.org/),
 [CBOR](https://cbor.io/) and [RION](http://tutorials.jenkov.com/rion/rion-encoding.html).

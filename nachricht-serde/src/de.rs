@@ -3,7 +3,7 @@ use serde::de::{self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, 
 use nachricht::{DecodeError, Header, Refable};
 use std::convert::TryInto;
 
-use crate::error::{Error, Result};
+use crate::error::{DeserializationError, Error, Result};
 
 pub struct Deserializer<'de> {
     input:  &'de [u8],
@@ -17,13 +17,13 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-pub fn from_bytes<'a, T: Deserialize<'a>>(s: &'a [u8]) -> Result<T> {
+pub fn from_bytes<'a, T: Deserialize<'a>>(s: &'a [u8]) -> std::result::Result<T, DeserializationError> {
     let mut deserializer = Deserializer::from_bytes(s);
-    let t = T::deserialize(&mut deserializer)?;
+    let t = T::deserialize(&mut deserializer).map_err(|e| e.at(deserializer.pos))?;
     if deserializer.input[deserializer.pos..].is_empty() {
         Ok(t)
     } else {
-        Err(Error::Trailing)
+        Err(Error::Trailing.at(deserializer.pos))
     }
 }
 
@@ -42,7 +42,7 @@ impl<'de> Deserializer<'de> {
         match header {
             Header::Pos(v) => Ok(v as i128),
             Header::Neg(v) => Ok(-(v as i128)),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Pos", "Neg"], o.name())),
         }
     }
 
@@ -75,7 +75,7 @@ impl<'de> Deserializer<'de> {
                     None => Err(Error::Decode(DecodeError::UnknownRef(v))),
                 }
             },
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Str", "Sym", "Key", "Ref"], o.name())),
         }
     }
 
@@ -120,7 +120,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         match self.decode_header()? {
             Header::True => visitor.visit_bool(true),
             Header::False => visitor.visit_bool(false),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["True", "False"], o.name())),
         }
     }
 
@@ -159,14 +159,14 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_f32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         match self.decode_header()? {
             Header::F32 => visitor.visit_f32(<f32>::from_be_bytes(self.decode_slice(4)?.try_into().unwrap())),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["F32"], o.name())),
         }
     }
 
     fn deserialize_f64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         match self.decode_header()? {
             Header::F64 => visitor.visit_f64(<f64>::from_be_bytes(self.decode_slice(8)?.try_into().unwrap())),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["F64"], o.name())),
         }
     }
 
@@ -175,13 +175,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         match self.decode_stringy(header)? {
             (v, Refable::Sym) => {
                 let mut chars = v.chars();
-                let c = chars.next().ok_or(Error::Unexpected)?;
+                let c = chars.next().ok_or(Error::Decode(DecodeError::Eof))?;
                 match chars.next() {
-                    Some(_) => Err(Error::Unexpected),
+                    Some(_) => Err(Error::Trailing),
                     None => visitor.visit_char(c),
                 }
             },
-            _ => Err(Error::Unexpected),
+            (_, o) => Err(Error::UnexpectedRefable(Refable::Sym.name(), o.name())),
         }
     }
 
@@ -189,7 +189,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         let header = self.decode_header()?;
         match self.decode_stringy(header)? {
             (v, Refable::Sym) => visitor.visit_borrowed_str(v),
-            _ => Err(Error::Unexpected),
+            (_, o) => Err(Error::UnexpectedRefable(Refable::Sym.name(), o.name())),
         }
     }
 
@@ -197,12 +197,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_bytes<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
+    fn deserialize_bytes<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         let header = self.decode_header()?;
         match header {
             Header::Bin(v) => visitor.visit_borrowed_bytes(self.decode_slice(v)?),
-            Header::Bag(v) => visitor.visit_seq(SeqDeserializer::new(&mut self, v)), // This will not work with currenet serde without serde_bytes!
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Bin"], o.name())),
         }
     }
 
@@ -216,7 +215,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 }
                 visitor.visit_byte_buf(bytes)
             },
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Bin", "Bag"], o.name())),
         }
     }
 
@@ -234,7 +233,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
         match self.decode_header()? {
             Header::Null => visitor.visit_unit(),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Null"], o.name())),
         }
     }
 
@@ -249,7 +248,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_seq<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
         match self.decode_header()? {
             Header::Bag(v) => visitor.visit_seq(SeqDeserializer::new(&mut self, v)),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Bag"], o.name())),
         }
     }
 
@@ -264,14 +263,14 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_map<V: Visitor<'de>>(mut self, visitor: V) -> Result<V::Value> {
         match self.decode_header()? {
             Header::Bag(v) => visitor.visit_map(MapDeserializer::new(&mut self, v)),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Bag"], o.name())),
         }
     }
 
     fn deserialize_struct<V: Visitor<'de>>(mut self, _name: &'static str, _fields: &'static [&'static str], visitor: V) -> Result<V::Value> {
         match self.decode_header()? {
             Header::Bag(v) => visitor.visit_map(StructDeserializer::new(&mut self, v)),
-            _ => Err(Error::Unexpected),
+            o => Err(Error::UnexpectedHeader(&["Bag"], o.name())),
         }
     }
 
@@ -280,7 +279,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             Header::Bag(1) => visitor.visit_enum(EnumDeserializer::new(&mut *self)),
             h => match self.decode_stringy(h)? {
                 (v, Refable::Sym) => visitor.visit_enum(v.into_deserializer()),
-                _ => Err(Error::Unexpected),
+                (_, o) => Err(Error::UnexpectedRefable(Refable::Sym.name(), o.name())),
             },
         }
     }
@@ -289,7 +288,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         let header = self.decode_header()?;
         match self.decode_stringy(header)? {
             (v, Refable::Key) => visitor.visit_borrowed_str(v),
-            _ => Err(Error::Unexpected),
+            (_, o) => Err(Error::UnexpectedRefable(Refable::Key.name(), o.name())),
         }
     }
 
@@ -355,7 +354,7 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
             let header = self.de.decode_header()?;
             match self.de.decode_stringy(header)? {
                 (v, Refable::Key) => seed.deserialize(v.into_deserializer()).map(Some),
-                _ => Err(Error::Unexpected)
+                (_, o) => Err(Error::UnexpectedRefable(Refable::Key.name(), o.name())),
             }
         }
     }
@@ -392,7 +391,7 @@ impl<'de, 'a> VariantAccess<'de> for EnumDeserializer<'a, 'de> {
     fn unit_variant(self) -> Result<()> {
         match self.de.decode_header()? {
             Header::Null => Ok(()),
-            _ => Err(Error::Unexpected)
+            o => Err(Error::UnexpectedHeader(&["Null"], o.name())),
         }
     }
 
