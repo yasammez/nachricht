@@ -39,11 +39,6 @@ mod error;
 mod header;
 mod field;
 
-#[doc(hidden)]
 pub use field::*;
-
-#[doc(hidden)]
 pub use error::*;
-
-#[doc(hidden)]
 pub use header::*;
