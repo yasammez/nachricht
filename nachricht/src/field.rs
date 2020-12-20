@@ -10,6 +10,7 @@ use std::io::Write;
 use std::convert::TryInto;
 use std::str::from_utf8;
 use std::iter::repeat;
+use std::borrow::Cow;
 
 /// The sign of an integer. Not that the encoder accepts negative zero but transparently translates it to positive zero.
 /// Likewise, decoders will accept the wire format for negative zero (which can only be achieved by purposefully chosing
@@ -24,9 +25,9 @@ pub enum Value<'a> {
     Bool(bool),
     F32(f32),
     F64(f64),
-    Bytes(&'a [u8]),
+    Bytes(Cow<'a, [u8]>),
     Int(Sign, u64),
-    Str(&'a str),
+    Str(Cow<'a, str>),
     Symbol(&'a str),
     Container(Vec<Field<'a>>),
 }
@@ -65,9 +66,9 @@ impl<'a> std::fmt::Display for Value<'a> {
             Value::F64(v)       => write!(f, "$${}", v),
             Value::Bytes(v)     => write!(f, ":{}", Self::b64(v).as_str()),
             Value::Int(s, v)    => write!(f, "{}{}", match s { Sign::Pos => "", Sign::Neg => "-" }, v),
-            Value::Str(v)       => write!(f, "\"{}\"", v.replace("\"", "\"\"")),
-            Value::Symbol(v) if v.chars().any(|c| "$ ,=\"'()#".contains(c))
-                                => write!(f, "#\"{}\"", v.replace("\"", "\"\"")),
+            Value::Str(v)       => write!(f, "\"{}\"", v.replace("\\", "\\\\").replace("\"", "\\\"")),
+            Value::Symbol(v) if v.chars().any(|c| "\\$ ,=\"'()#".contains(c))
+                                => write!(f, "#\"{}\"", v.replace("\\", "\\\\").replace("\"", "\\\"")),
             Value::Symbol(v)    => write!(f, "#{}", v),
             Value::Container(v) => write!(f,"(\n{}\n)", v.iter()
                 .flat_map(|f| format!("{},", f).lines().map(|line| format!("  {}", line)).collect::<Vec<String>>())
@@ -88,8 +89,8 @@ pub struct Field<'a> {
 impl<'a> std::fmt::Display for Field<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.name {
-            Some(n) if n.chars().any(|c| "$ ,=\"'()#".contains(c))
-                    => write!(f, "'{}' = {}", n.replace("'", "''"), self.value),
+            Some(n) if n.chars().any(|c| "\\$ ,=\"'()#".contains(c))
+                    => write!(f, "'{}' = {}", n.replace("\\", "\\\\").replace("'", "\\'"), self.value),
             Some(n) => write!(f, "{} = {}", n, self.value),
             None    => write!(f, "{}", self.value),
         }
@@ -231,7 +232,7 @@ impl<'a> Decoder<'a> {
             Header::False  => Ok(Value::Bool(false)),
             Header::F32    => Ok(Value::F32(<f32>::from_be_bytes(self.decode_slice(4)?.try_into().unwrap()))),
             Header::F64    => Ok(Value::F64(<f64>::from_be_bytes(self.decode_slice(8)?.try_into().unwrap()))),
-            Header::Bin(v) => Ok(Value::Bytes(self.decode_slice(v)?)),
+            Header::Bin(v) => Ok(Value::Bytes(Cow::Borrowed(self.decode_slice(v)?))),
             Header::Pos(v) => Ok(Value::Int(Sign::Pos, v)),
             Header::Neg(v) => Ok(Value::Int(Sign::Neg, v)),
             Header::Bag(v) => {
@@ -241,7 +242,7 @@ impl<'a> Decoder<'a> {
                 }
                 Ok(Value::Container(fields))
             },
-            Header::Str(v) => Ok(Value::Str(from_utf8(&self.decode_slice(v)?)?)),
+            Header::Str(v) => Ok(Value::Str(Cow::Borrowed(from_utf8(&self.decode_slice(v)?)?))),
             Header::Sym(v) => {
                 let symbol = from_utf8(&self.decode_slice(v)?)?;
                 self.symbols.push((Refable::Sym, symbol));
@@ -275,6 +276,7 @@ impl<'a> Decoder<'a> {
 #[cfg(test)]
 mod test {
     use super::{Field, Value, Sign, Encoder, Decoder, DecodeError};
+    use std::borrow::Cow;
 
     #[test]
     fn simple_unnamed_fields() {
@@ -314,13 +316,13 @@ mod test {
     #[test]
     fn strings() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: None, value: Value::Str("Hello World! This is not ascii: äöüß") }, &mut buf);
+        assert_roundtrip(Field { name: None, value: Value::Str(Cow::Borrowed("Hello World! This is not ascii: äöüß")) }, &mut buf);
     }
 
     #[test]
     fn bytes() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: None, value: Value::Bytes(&[1, 2, 3, 4, 255]) }, &mut buf);
+        assert_roundtrip(Field { name: None, value: Value::Bytes(Cow::Borrowed(&[1, 2, 3, 4, 255])) }, &mut buf);
     }
 
     #[test]

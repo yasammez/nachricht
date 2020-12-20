@@ -1,7 +1,7 @@
 [package]
 name = "nachricht-nq"
 version = "0.1.0"
-authors = ["Liv <liv.fischer@senacor.com>"]
+authors = ["Liv Fischer <liv.fischer@senacor.com>"]
 license = "MIT"
 description = "Pretty printing of nachricht messages"
 repository = "https://github.com/yasammez/nachricht"
@@ -18,3 +18,6 @@ path = "src/main.rs"
 [dependencies]
 nachricht = { path = "../nachricht" }
 anyhow = "1.0"
+structopt = "0.3"
+nom = "6"
+base64 = "0.13"

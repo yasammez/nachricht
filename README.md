@@ -178,22 +178,21 @@ applicable.
 
 ### String
 
-Strings are always enclosed in double quotes `"`. This character escapes itself, so a string `"` would be represented as
-`""""`.
+Strings are always enclosed in double quotes `"`. Double quotes and backslashes are escaped as `\"` and `\\`.
 
 ### Symbol
 
-Symbols are prefixed with `#`. If they contain a space or one of `$,="'()#` they are enclosed in double quotes `"`. This
-character escapes itself: a symbol `red` would be represented as `#red` while `red"s` would be represented as
-`#"red""s"`. Quoting is suspected to be rarely necessary by virtue of most programming languages placing restrictions on
-which characters can occur in an identifier.
+Symbols are prefixed with `#`. If they contain a space or one of `\$,="'()#` they are enclosed in double quotes `"`. A
+symbol `red` would be represented as `#red` while `red"s` would be represented as `#"red\"s"`. Quoting is suspected to
+be rarely necessary by virtue of most programming languages placing restrictions on which characters can occur in an
+identifier.
 
 ### Key
 
-Keys are suffixed with `=`. If they contain a space or one of `$,="'()#` they are enclosed in single quotes `'`. This
-character escapes itself: a key `version` would be represented as `version=` while `version's` would be represented as
-`'version''s'=`. Quoting is suspected to be rarely necessary by virtue of most programming languages placing
-restrictions on which characters can occur in an identifier.
+Keys are suffixed with `=`. If they contain a space or one of `\$,="'()#` they are enclosed in single quotes `'`. A key
+`version` would be represented as `version=` while `version's` would be represented as `'version\'s'=`. Quoting is
+suspected to be rarely necessary by virtue of most programming languages placing restrictions on which characters can
+occur in an identifier.
 
 ### Container
 
