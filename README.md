@@ -59,7 +59,7 @@ There are four small or fixed (because they do not need additional size informat
 | String    | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
 | Symbol    | #red                   | Same semantics as String, for enums and atoms    |
 | Key       | id=, 'with spaces'=    | the following item must be a value               |
-| Container | (1, "two")             | length in values, not bytes                      |
+| Container | (1, "two",)            | length in values, not bytes                      |
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
@@ -142,6 +142,117 @@ there can be repeated strings in value position as well (think of enum variants 
 exists, which has exactly the same semantics as `String` but also introduces its value into the symbol table. Because
 the distinction between keys and values is important, a decoder needs to track if an encountered value is a key or a
 symbol in its symbol table for correct deserialization.
+
+## Textual representation
+
+In order to be easy to interact with from a developer's point of view, nachricht needs to possess a textual
+representation which is free of ambiguities so that humans can read and write nachricht fields from the command line.
+Note that this translation doesn't necessarily have to be bijective on a binary level: encoders *should* always use the
+most space-efficient form but may choose to repeat keys instead of using the symbol table and header payloads may
+allocate more bytes than strictly necessary. In the textual representation all whitespace that is not part of a quoted
+string, symbol or key is regarded as insignificant. In fact the reference implementation produces spaces and newlines to
+improve human readability. Parsers *must* ignore any insignificant whitespace but printers are not obliged to generate
+any.
+
+### Null and Bool
+
+These types are simply represented with the keywords `null`, `true` and `false`.
+
+### Floats
+
+All numbers, floats and integers, are represented in base 10 only. F32 values are prefixed with `$` and F64 values with
+`$$` to make them distinguishable from integers and each other. `.` is used as decimal separator.
+
+### Integers
+
+Negative integers are prefixed with `-` while positive integers have no prefix. Negative zero `-0` is illegal.
+
+### Bytes
+
+Bytes values are prefixed with `:` and represented in standard base 64 encoding with the trailing `=` signs where
+applicable.
+
+### String
+
+Strings are always enclosed in double quotes `"`. This character escapes itself, so a string `"` would be represented as
+`""""`.
+
+### Symbol
+
+Symbols are prefixed with `#`. If they contain a space or one of `$,="'()#` they are enclosed in double quotes `"`. This
+character escapes itself: a symbol `red` would be represented as `#red` while `red"s` would be represented as
+`#"red""s"`. Quoting is suspected to be rarely necessary by virtue of most programming languages placing restrictions on
+which characters can occur in an identifier.
+
+### Key
+
+Keys are suffixed with `=`. If they contain a space or one of `$,="'()#` they are enclosed in single quotes `'`. This
+character escapes itself: a key `version` would be represented as `version=` while `version's` would be represented as
+`'version''s'=`. Quoting is suspected to be rarely necessary by virtue of most programming languages placing
+restrictions on which characters can occur in an identifier.
+
+### Container
+
+Containers are enclosed by parentheses `()` and fields within a container are suffixed by a comma `,`. Note that a
+trailing comma after the last field in a container is not optional.
+
+### Example
+
+Consider the following JSON:
+
+```json
+{
+  "version": 1,
+  "cats": [
+    {
+      "name": "Jessica",
+      "species": "PrionailurusViverrinus"
+    },
+    {
+      "name": "Wantan",
+      "species": "LynxLynx"
+    },
+    {
+      "name": "Sphinx",
+      "species": "FelisCatus"
+    },
+    {
+      "name": "Chandra",
+      "species": "PrionailurusViverrinus"
+    }
+  ]
+}
+
+```
+
+This could roughly be translated into a nachricht textual representation of:
+
+```nachricht
+(
+  version = 1,
+  cats = (
+   (
+     name = "Jessica",
+     species = #PrionailurusViverrinus,
+   ),
+   (
+     name = "Wantan",
+     species = #LynxLynx,
+   ),
+   (
+     name = "Sphinx",
+     species = #FelisCatus,
+   ),
+   (
+     name = "Chandra",
+     species = #PrionailurusViverrinus,
+   ),
+ ),
+)
+```
+
+Note that, in contrast to JSON, a single named field without an enclosing container is possible: `key = "value"` is
+valid.
 
 ## Prior Art and when to use it
 
