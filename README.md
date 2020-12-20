@@ -52,10 +52,10 @@ There are four small or fixed (because they do not need additional size informat
 |-----------|------------------------|--------------------------------------------------|
 | Null      | null                   | also known as nil or unit                        |
 | Bool      | true, false            | a simple boolean                                 |
-| F32       | 123.456                | 32 bit floating point number                     |
-| F64       | 123.456                | 64 bit floating point number                     |
+| F32       | $123.456               | 32 bit floating point number                     |
+| F64       | $$123.456              | 64 bit floating point number                     |
 | Int       | 123, -123              | signed 65 bit integer                            |
-| Bytes     | [01, ab, d8]           | opaque array of bytes, useful for nesting        |
+| Bytes     | :base64==              | opaque array of bytes, useful for nesting        |
 | String    | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
 | Symbol    | #red                   | Same semantics as String, for enums and atoms    |
 | Key       | id=, 'with spaces'=    | the following item must be a value               |

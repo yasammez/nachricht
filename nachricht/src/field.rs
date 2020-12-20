@@ -9,6 +9,7 @@ use std::mem::size_of;
 use std::io::Write;
 use std::convert::TryInto;
 use std::str::from_utf8;
+use std::iter::repeat;
 
 /// The sign of an integer. Not that the encoder accepts negative zero but transparently translates it to positive zero.
 /// Likewise, decoders will accept the wire format for negative zero (which can only be achieved by purposefully chosing
@@ -30,6 +31,51 @@ pub enum Value<'a> {
     Container(Vec<Field<'a>>),
 }
 
+impl<'a> Value<'a> {
+
+    fn b64(input: &[u8]) -> String {
+        const CHAR_SET: &'static [char] = &['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
+            'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g',
+            'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'
+        ];
+        let mut array = [0; 4];
+        input.chunks(3).flat_map(|chunk| {
+            let len = chunk.len();
+            array[1..1 + len].copy_from_slice(chunk);
+            for i in 0..(3 - len) {
+                array[3 - i] = 0;
+            }
+            let x = u32::from_be_bytes(array);
+            (0..=len).map(move |o| CHAR_SET[(x >> (18 - 6*o) & 0x3f) as usize]).chain(repeat('=').take(3-len))
+        }).collect()
+    }
+
+}
+
+
+
+impl<'a> std::fmt::Display for Value<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Null         => f.write_str("null"),
+            Value::Bool(true)   => f.write_str("true"),
+            Value::Bool(false)  => f.write_str("false"),
+            Value::F32(v)       => write!(f, "${}", v),
+            Value::F64(v)       => write!(f, "$${}", v),
+            Value::Bytes(v)     => write!(f, ":{}", Self::b64(v).as_str()),
+            Value::Int(s, v)    => write!(f, "{}{}", match s { Sign::Pos => "", Sign::Neg => "-" }, v),
+            Value::Str(v)       => write!(f, "\"{}\"", v.replace("\"", "\"\"")),
+            Value::Symbol(v) if v.chars().any(|c| "$ ,=\"'()#".contains(c))
+                                => write!(f, "#\"{}\"", v.replace("\"", "\"\"")),
+            Value::Symbol(v)    => write!(f, "#{}", v),
+            Value::Container(v) => write!(f,"(\n{}\n)", v.iter()
+                .flat_map(|f| format!("{},", f).lines().map(|line| format!("  {}", line)).collect::<Vec<String>>())
+                .collect::<Vec<String>>().join("\n")),
+        }
+    }
+}
+
 /// When encoding struct-like data structures, `name` should be the identifier of the current field. When encoding
 /// sequence-like data, `name` can be omitted. Note that the type of `name` is fixed at `&str`, which means maps with
 /// arbitrary key types need to be encoded as sequences.
@@ -41,29 +87,12 @@ pub struct Field<'a> {
 
 impl<'a> std::fmt::Display for Field<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self.name {
-            Some(n) => format!("{} = ", n), // TODO: escaping
-            None => "".into(),
-        };
-        let value = match &self.value {
-            Value::Null => "null".into(),
-            Value::Bool(true) => "true".into(),
-            Value::Bool(false) => "false".into(),
-            Value::F32(f) => format!("{}", f),
-            Value::F64(f) => format!("{}", f),
-            Value::Bytes(bytes) => format!("{:02x?}", bytes), // TODO: base64?
-            Value::Int(s, num) => format!("{}{}", match s { Sign::Pos => "", Sign::Neg => "-" }, num),
-            Value::Str(value) => format!("\"{}\"", value.replace("\\", "\\\\").replace("\"", "\\\"")),
-            Value::Symbol(value) => format!("#{}", if value.contains(" ") || value.contains(",") {
-                format!("\"{}\"", value.replace("\"", "\\\""))
-            } else {
-                (*value).into()
-            }),
-            Value::Container(fields) => format!("(\n{}\n)", fields.iter()
-                .flat_map(|field| format!("{},", field).lines().map(|line| format!("  {}", line)).collect::<Vec<String>>())
-                .collect::<Vec<String>>().join("\n")),
-        };
-        write!(f, "{}{}", name, value)
+        match self.name {
+            Some(n) if n.chars().any(|c| "$ ,=\"'()#".contains(c))
+                    => write!(f, "'{}' = {}", n.replace("'", "''"), self.value),
+            Some(n) => write!(f, "{} = {}", n, self.value),
+            None    => write!(f, "{}", self.value),
+        }
     }
 }
 
@@ -242,7 +271,6 @@ impl<'a> Decoder<'a> {
     }
 
 }
-
 
 #[cfg(test)]
 mod test {
