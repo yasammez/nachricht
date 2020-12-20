@@ -18,6 +18,11 @@ followed by an actual value whose name they define. In this way, fields can be n
 only one container type is necessary. A JSON array can be represented by a container full of unnamed fields while a JSON
 map gets translated to a container in which every field is named.
 
+## Language support
+
+At the moment, only Rust is supported. This might change in the future. If you would like support for a specific
+language, open an issue!
+
 ## Goals
 
 ### Goals
@@ -29,7 +34,6 @@ map gets translated to a container in which every field is named.
 * **Serialize and deserialize fast.** There is, of course, a trade-off to be made here: zero-copy formats are
   insanely fast to decode but force the serializer to pre-compute a lot of pointers. If the sending side has less CPU
   than the receiving side, this isn't optimal. Also, pointers take up space on wire (seee above).
-* **Integrate well with serde**.
 * **Be interpretable without a schema.** This does not mean that there *cannot* be a schema. In fact, I encourage you to
   use one. However, schema evolution and discovery are much simpler when schemas are optional. Also, integration with
   serde is impossible for non self-describing formats (see above).
