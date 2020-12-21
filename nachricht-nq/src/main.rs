@@ -2,7 +2,7 @@ mod parser;
 
 use nachricht::*;
 use std::io::{self, Read};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use structopt::StructOpt;
 use std::str::from_utf8;
 
@@ -10,32 +10,33 @@ use std::str::from_utf8;
 #[derive(StructOpt)]
 #[structopt(name = "nq", author = "Liv Fischer")]
 struct Opt {
-    /// parse a textual representation and encode it iinto a binary nachricht instead
+    /// encode the output into the wire format instead
     #[structopt(short, long)]
     encode: bool,
+
+    /// parse the input from the textual representation instead
+    #[structopt(short, long)]
+    text: bool,
 }
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
     let mut buffer = Vec::new();
     io::stdin().read_to_end(&mut buffer).context("Failed to read stdin")?;
-    if opt.encode {
-        parse(&buffer)
+    let field = if opt.text {
+        parse(&buffer)?
     } else {
-        print(&buffer)
+        Decoder::decode(&buffer)?.0
+    };
+    if opt.encode {
+        Encoder::encode(&field, &mut io::stdout())?;
+    } else {
+        println!("{}", &field);
     }
-}
-
-fn print(buffer: &[u8]) -> Result<()> {
-    let (field, _) = Decoder::decode(&buffer).context("Decoding error")?;
-    println!("{}", &field);
     Ok(())
 }
 
-fn parse(buffer: &[u8]) -> Result<()> {
+fn parse(buffer: &[u8]) -> Result<Field> {
     let string = from_utf8(&buffer).context("input is not utf-8")?;
-    let field = parser::parse(string)?;
-    println!("{}", &field);
-    //Encoder::encode(&field, &mut std::io::stdout())?;
-    Ok(())
+    parser::parse(string)
 }

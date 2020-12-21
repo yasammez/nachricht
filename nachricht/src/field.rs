@@ -28,7 +28,7 @@ pub enum Value<'a> {
     Bytes(Cow<'a, [u8]>),
     Int(Sign, u64),
     Str(Cow<'a, str>),
-    Symbol(&'a str),
+    Symbol(Cow<'a, str>),
     Container(Vec<Field<'a>>),
 }
 
@@ -64,11 +64,11 @@ impl<'a> std::fmt::Display for Value<'a> {
             Value::Bool(false)  => f.write_str("false"),
             Value::F32(v)       => write!(f, "${}", v),
             Value::F64(v)       => write!(f, "$${}", v),
-            Value::Bytes(v)     => write!(f, ":{}", Self::b64(v).as_str()),
+            Value::Bytes(v)     => write!(f, "'{}'", Self::b64(v).as_str()),
             Value::Int(s, v)    => write!(f, "{}{}", match s { Sign::Pos => "", Sign::Neg => "-" }, v),
-            Value::Str(v)       => write!(f, "\"{}\"", v.replace("\\", "\\\\").replace("\"", "\\\"")),
-            Value::Symbol(v) if v.chars().any(|c| "\\$ ,=\"'()#".contains(c))
-                                => write!(f, "#\"{}\"", v.replace("\\", "\\\\").replace("\"", "\\\"")),
+            Value::Str(v)       => write!(f, "\"{}\"", v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")),
+            Value::Symbol(v) if v.chars().any(|c| "\n\\$ ,=\"'()#".contains(c))
+                                => write!(f, "#\"{}\"", v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")),
             Value::Symbol(v)    => write!(f, "#{}", v),
             Value::Container(v) => write!(f,"(\n{}\n)", v.iter()
                 .flat_map(|f| format!("{},", f).lines().map(|line| format!("  {}", line)).collect::<Vec<String>>())
@@ -82,16 +82,16 @@ impl<'a> std::fmt::Display for Value<'a> {
 /// arbitrary key types need to be encoded as sequences.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Field<'a> {
-    pub name: Option<&'a str>,
+    pub name: Option<Cow<'a, str>>,
     pub value: Value<'a>,
 }
 
 impl<'a> std::fmt::Display for Field<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.name {
-            Some(n) if n.chars().any(|c| "\\$ ,=\"'()#".contains(c))
-                    => write!(f, "'{}' = {}", n.replace("\\", "\\\\").replace("'", "\\'"), self.value),
-            Some(n) => write!(f, "{} = {}", n, self.value),
+            Some(ref n) if n.chars().any(|c| "\n\\$ ,=\"'()#".contains(c))
+                    => write!(f, "\"{}\" = {}", n.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n"), self.value),
+            Some(ref n) => write!(f, "{} = {}", n, self.value),
             None    => write!(f, "{}", self.value),
         }
     }
@@ -129,8 +129,8 @@ impl<'w, W: Write> Encoder<'w, W> {
 
     fn encode_inner(&mut self, field: &Field) -> Result<usize, EncodeError> {
         let mut c = 0;
-        if let Some(name) = field.name {
-            c += self.encode_refable(name, Refable::Key)?;
+        if let Some(ref name) = field.name {
+            c += self.encode_refable(name.as_ref(), Refable::Key)?;
         }
         match &field.value {
             Value::Null      => Header::Null.encode(self.writer),
@@ -206,12 +206,12 @@ impl<'a> Decoder<'a> {
             Header::Key(v) => {
                 let key = from_utf8(&self.decode_slice(v)?)?;
                 self.symbols.push((Refable::Key, key));
-                Ok(Field { name: Some(key), value: self.decode_value()? })
+                Ok(Field { name: Some(Cow::Borrowed(key)), value: self.decode_value()? })
             },
             Header::Ref(v) => {
                 match self.symbols.get(v) {
                     Some((Refable::Sym, _)) => Ok(Field { name: None, value: self.decode_value_inner(header)? }),
-                    Some((Refable::Key, key)) => Ok(Field { name: Some(key), value: self.decode_value()? }),
+                    Some((Refable::Key, key)) => Ok(Field { name: Some(Cow::Borrowed(key)), value: self.decode_value()? }),
                     _ => Err(DecodeError::UnknownRef(v)),
                 }
             },
@@ -246,7 +246,7 @@ impl<'a> Decoder<'a> {
             Header::Sym(v) => {
                 let symbol = from_utf8(&self.decode_slice(v)?)?;
                 self.symbols.push((Refable::Sym, symbol));
-                Ok(Value::Symbol(symbol))
+                Ok(Value::Symbol(Cow::Borrowed(symbol)))
             },
             Header::Key(v) => {
                 let key = from_utf8(&self.decode_slice(v)?)?;
@@ -254,7 +254,7 @@ impl<'a> Decoder<'a> {
             },
             Header::Ref(v) => {
                 match self.symbols.get(v) {
-                    Some((Refable::Sym, symbol)) => Ok(Value::Symbol(symbol)),
+                    Some((Refable::Sym, symbol)) => Ok(Value::Symbol(Cow::Borrowed(symbol))),
                     Some((Refable::Key, key)) => Err(DecodeError::DuplicateKey(key.to_string())),
                     None => Err(DecodeError::UnknownRef(v))
                 }
@@ -304,12 +304,12 @@ mod test {
     #[test]
     fn simple_named_fields() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: Some("null"), value: Value::Null }, &mut buf);
-        assert_roundtrip(Field { name: Some("bool"), value: Value::Bool(true) }, &mut buf);
-        assert_roundtrip(Field { name: Some("bool"), value: Value::Bool(false) }, &mut buf);
+        assert_roundtrip(Field { name: Some(Cow::Borrowed("null")), value: Value::Null }, &mut buf);
+        assert_roundtrip(Field { name: Some(Cow::Borrowed("bool")), value: Value::Bool(true) }, &mut buf);
+        assert_roundtrip(Field { name: Some(Cow::Borrowed("bool")), value: Value::Bool(false) }, &mut buf);
         for i in (0..u64::MAX).step_by(3_203_431_780_337) {
-            assert_roundtrip(Field { name: Some("integer"), value: Value::Int(Sign::Pos, i) }, &mut buf);
-            assert_roundtrip(Field { name: Some("integer"), value: Value::Int(Sign::Neg, if i == 0 { 1 } else { i }) }, &mut buf);
+            assert_roundtrip(Field { name: Some(Cow::Borrowed("integer")), value: Value::Int(Sign::Pos, i) }, &mut buf);
+            assert_roundtrip(Field { name: Some(Cow::Borrowed("integer")), value: Value::Int(Sign::Neg, if i == 0 { 1 } else { i }) }, &mut buf);
         }
     }
 
@@ -328,7 +328,7 @@ mod test {
     #[test]
     fn array_mixed() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![
+        assert_roundtrip(Field { name: Some(Cow::Borrowed("array")), value: Value::Container(vec![
                 Field { name: None, value: Value::Int(Sign::Pos, 1) },
                 Field { name: None, value: Value::Int(Sign::Pos, 2) },
                 Field { name: None, value: Value::Int(Sign::Pos, 3) },
@@ -340,7 +340,7 @@ mod test {
     fn array_long() {
         let mut buf = Vec::new();
         for i in 0..1 << 10 {
-            assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![
+            assert_roundtrip(Field { name: Some(Cow::Borrowed("array")), value: Value::Container(vec![
                     Field { name: None, value: Value::Int(Sign::Pos, 1) }; i as usize
             ])}, &mut buf);
         }
@@ -349,19 +349,20 @@ mod test {
     #[test]
     fn map() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: Some("map"), value: Value::Container(vec![
-                Field { name: Some("first"), value: Value::Int(Sign::Pos, 1) },
-                Field { name: Some("second"), value: Value::Int(Sign::Pos, 2) },
-                Field { name: Some("third"), value: Value::Int(Sign::Pos, 3) },
-                Field { name: Some("fourth"), value: Value::Int(Sign::Pos, 4) },
+        assert_roundtrip(Field { name: Some(Cow::Borrowed("map")), value: Value::Container(vec![
+                Field { name: Some(Cow::Borrowed("first")), value: Value::Int(Sign::Pos, 1) },
+                Field { name: Some(Cow::Borrowed("second")), value: Value::Int(Sign::Pos, 2) },
+                Field { name: Some(Cow::Borrowed("third")), value: Value::Int(Sign::Pos, 3) },
+                Field { name: Some(Cow::Borrowed("fourth")), value: Value::Int(Sign::Pos, 4) },
         ])}, &mut buf);
     }
 
     #[test]
     fn symbols() {
         let mut buf = Vec::new();
-        assert_roundtrip(Field { name: Some("array"), value: Value::Container(vec![
-                Field { name: None, value: Value::Container(vec![ Field { name: Some("key"), value: Value::Symbol("VALUE") } ]) }; 3
+        assert_roundtrip(Field { name: Some(Cow::Borrowed("array")), value: Value::Container(vec![
+                Field { name: None, value: Value::Container(vec![
+                    Field { name: Some(Cow::Borrowed("key")), value: Value::Symbol(Cow::Borrowed("VALUE")) } ]) }; 3
             ])}, &mut buf);
     }
 

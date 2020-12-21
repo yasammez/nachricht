@@ -14,9 +14,10 @@
 //!
 //! ```
 //! use nachricht::*;
+//! use std::borrow::Cow;
 //!
 //! let mut buf = Vec::new();
-//! let field = Field { name: Some("key"), value: Value::Str("value") };
+//! let field = Field { name: Some(Cow::Borrowed("key")), value: Value::Str(Cow::Borrowed("value")) };
 //! Encoder::encode(&field, &mut buf);
 //! assert_eq!(buf, [
 //!     0xc3, // Key of length 3
