@@ -33,7 +33,7 @@ language, open an issue!
   at that if possible.
 * **Serialize and deserialize fast.** There is, of course, a trade-off to be made here: zero-copy formats are insanely
   fast to decode but force the serializer to pre-compute a lot of pointers. If the sending side has less CPU than the
-  receiving side, this isn't optimal. Also, pointers take up space on wire (seee above).
+  receiving side, this isn't optimal. Also, pointers take up space on wire (see above).
 * **Be interpretable without a schema.** This does not mean that there *cannot* be a schema. In fact, I encourage you to
   use one. However, schema evolution and discovery are much simpler when schemas are optional.
 * **Have a human-readable representation.** Interacting with the format should be as easy as `curl | jq` for
@@ -67,7 +67,7 @@ There are four small or fixed (because they do not need additional size informat
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
-key types a represented as containers with alternating key and value entries.
+key types are represented as containers with alternating key and value entries.
 
 ## Wire format
 
@@ -76,7 +76,7 @@ endian.
 
 The unit of a message in nachricht is called a field. A field consists of a value and an optional key, or name. An item
 is either a key or a value. As keys and symbols get en- and decoded, their values are referenced in a table. Therefore,
-a key can be replaced by a reference which only contains the index into this list.
+a repeated key can be replaced by a reference which only contains the index into this list.
 
 Every item begins with a header which itself consists of a lead byte and zero to eight additional bytes specifying its
 length. We have 256 possible states in the first byte. We want to waste none of them and simultaneously have a simple
@@ -123,7 +123,7 @@ The possible values are used as following.
 |  5 - 23       | Bytes with `length` equals to `sz` - 5             |
 | 24 - 31       | Bytes where `length` in `sz` - 23 following bytes  |
 
-The pattern has been chosen so that the octect `0x00` equals the nachricht value `null`.
+The pattern has been chosen so that the octet `0x00` equals the nachricht value `null`.
 
 ### Integer encoding
 
@@ -142,7 +142,7 @@ keys. To alleviate this cost, every key that gets serialized is also referenced 
 getting index zero, the second key index one, and so on. When a key is repeated, for instance when serializing another
 struct of the same type, a reference can be used instead of a repetition of the key. Depending on the number of keys
 (and thus the size of the symbol table) and  their values, this can save a lot of bytes on wire. Furthermore, since
-there can be repeated strings in value position as well (think of enum variants or erlang atoms), a code `Symbol`
+there can be repeated strings in value position as well (think of enum variants or Erlang atoms), a code `Symbol`
 exists, which has exactly the same semantics as `String` but also introduces its value into the symbol table. Because
 the distinction between keys and values is important, a decoder needs to track if an encountered value is a key or a
 symbol in its symbol table for correct deserialization.
@@ -155,7 +155,7 @@ Note that this translation doesn't necessarily have to be bijective on a binary 
 most space-efficient form but may choose to repeat keys instead of using the symbol table and header payloads may
 allocate more bytes than strictly necessary. In the textual representation all whitespace that is not part of a quoted
 string, symbol or key is regarded as insignificant. In fact the reference implementation produces spaces and newlines to
-improve human readability. Parsers *must* ignore any insignificant whitespace but printers are not obliged to generate
+improve human readability. Parsers *must* ignore any insignificant whitespace and printers are not obliged to generate
 any.
 
 ### Null and Bool
