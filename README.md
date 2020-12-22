@@ -31,14 +31,14 @@ language, open an issue!
 * **Have a low code footprint.** Do not increase code size unreasonably. Also, nobody likes exploding transitive
   dependency trees: currently nachricht has no dependencies while nachricht-serde only depends on serde. Try to keep it
   at that if possible.
-* **Serialize and deserialize fast.** There is, of course, a trade-off to be made here: zero-copy formats are
-  insanely fast to decode but force the serializer to pre-compute a lot of pointers. If the sending side has less CPU
-  than the receiving side, this isn't optimal. Also, pointers take up space on wire (seee above).
+* **Serialize and deserialize fast.** There is, of course, a trade-off to be made here: zero-copy formats are insanely
+  fast to decode but force the serializer to pre-compute a lot of pointers. If the sending side has less CPU than the
+  receiving side, this isn't optimal. Also, pointers take up space on wire (seee above).
 * **Be interpretable without a schema.** This does not mean that there *cannot* be a schema. In fact, I encourage you to
-  use one. However, schema evolution and discovery are much simpler when schemas are optional. Also, integration with
-  serde is impossible for non self-describing formats (see above).
+  use one. However, schema evolution and discovery are much simpler when schemas are optional.
 * **Have a human-readable representation.** Interacting with the format should be as easy as `curl | jq` for
-  JSON-delivering webservices. This is why nachricht-nq exists.
+  JSON-delivering webservices. This is why
+  [nachricht-nq](https://github.com/yasammez/nachricht/tree/master/nachricht-nq) exists.
 
 ### Non-Goals
 * **Easy skip-parsing**: this would complicate and slow down encoders by a lot. It would also slow down decoders in
@@ -58,12 +58,12 @@ There are four small or fixed (because they do not need additional size informat
 | Bool      | true, false            | a simple boolean                                 |
 | F32       | $123.456               | 32 bit floating point number                     |
 | F64       | $$123.456              | 64 bit floating point number                     |
-| Int       | 123, -123              | signed 65 bit integer                            |
-| Bytes     | :base64==              | opaque array of bytes, useful for nesting        |
+| Int       | 123, -123              | signed 65 (!) bit integer                        |
+| Bytes     | 'base64//'             | opaque array of bytes, useful for nesting        |
 | String    | "hello world"          | valid UTF-8 only; length in bytes not codepoints |
 | Symbol    | #red                   | Same semantics as String, for enums and atoms    |
 | Key       | id =, "with spaces" =  | the following item must be a value               |
-| Container | (1, "two",)            | length in values, not bytes                      |
+| Container | (1, "two")             | length in values, not bytes                      |
 
 Containers can be arbitrarily nested. Sequences are represented as containers of anonymous values, structs as containers
 of named values, i.e. ones with a key. Sequences of structs profit from references to previous keys. Maps with arbitrary
@@ -99,7 +99,7 @@ The code defines the major type of the item.
 
 | code | binary | mnemonic | meaning           | meaning of `payload`              |
 |------|--------|----------|-------------------|-----------------------------------|
-|    0 |   b000 | Bin      | Bytes             | length in bytes OR a fixed type   |
+|    0 |   b000 | Bin      | Bytes             | length in bytes                   |
 |    1 |   b001 | Pos      | positive integer  | value                             |
 |    2 |   b010 | Neg      | negative integer  | abs(1 + value)                    |
 |    3 |   b011 | Bag      | Container         | length in fields                  |
@@ -130,10 +130,10 @@ The pattern has been chosen so that the octect `0x00` equals the nachricht value
 Integers are split into positive and negative because in standard two-complement representation, every negative integer
 has its most significant bit set, therefore rendering packing impossible. The 1-offset is to save an additional value
 byte in edge cases (-256 for instance) and because having two different representations of zero would be redundant. This
-creates one superfluous case of `[0x5f 0xff 0xff 0xff 0xff 0xff 0xff 0xff 0xff]` which an encoder *should* never produce
-and a decoder *must* always interpet as -18,446,744,073,709,551,615. This decision has been made to shift the inevitable
-redundancy problem to a less frequently used place in the parameter space. The rather unusual i65 datatype is the
-smallest type that allows encoding of either u64 or i64 values.
+creates one superfluous case of `[0x5f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]` which an encoder *should* never
+produce and a decoder *must* always interpet as -18,446,744,073,709,551,615 (-u64::MAX). This decision has been made to
+shift the inevitable redundancy problem to a less frequently used place in the parameter space. The rather unusual i65
+datatype is the smallest type that allows encoding of either u64 or i64 values.
 
 ### The symbol table
 
@@ -169,12 +169,13 @@ All numbers, floats and integers, are represented in base 10 only. F32 values ar
 
 ### Integers
 
-Negative integers are prefixed with `-` while positive integers have no prefix. Negative zero `-0` is illegal.
+Negative integers are prefixed with `-` while positive integers have no prefix. Printers *must not* produce negative
+zero `-0` but parsers *should* be able to interpret and transparently convert it to `0`.
 
 ### Bytes
 
-Bytes values are prefixed with `:` and represented in standard base 64 encoding with the trailing `=` signs where
-applicable.
+Bytes values are enclosed in single quotes `'` and represented in standard base64 encoding with the trailing equals
+signs `=` where applicable.
 
 ### String
 
@@ -184,16 +185,16 @@ Strings are always enclosed in double quotes `"`. Double quotes, newlines and ba
 ### Symbol
 
 Symbols are prefixed with `#`. If they contain a newline, space or one of `\$,="'()#` they are enclosed in double quotes
-`"`. A symbol `red` would be represented as `#red` while `red"s` would be represented as `#"red\"s"`. Quoting is
-suspected to be rarely necessary by virtue of most programming languages placing restrictions on which characters can
-occur in an identifier.
+`"` and subject to the same escaping rules as strings. A symbol `red` would be represented as `#red` while `red"s` would
+be represented as `#"red\"s"`. Quoting is suspected to be rarely necessary by virtue of most programming languages
+placing restrictions on which characters can occur in an identifier.
 
 ### Key
 
 Keys are suffixed with `=`. If they contain a newline, space or one of `\$,="'()#` they are enclosed in double quotes
-`"`. A key `version` would be represented as `version=` while `version"s` would be represented as `'version\"s'=`.
-Quoting is suspected to be rarely necessary by virtue of most programming languages placing restrictions on which
-characters can occur in an identifier.
+`"` and subject to the same escaping rules as strings. A key `version` would be represented as `version=` while
+`version"s` would be represented as `"version\"s"=`.  Quoting is suspected to be rarely necessary by virtue of most
+programming languages placing restrictions on which characters can occur in an identifier.
 
 ### Container
 
@@ -255,8 +256,9 @@ This could roughly be translated into a nachricht textual representation of:
 )
 ```
 
-Note that, in contrast to JSON, a single named field without an enclosing container is possible: `key = "value"` is
-valid.
+For an explanation of the binary format of this example, check out the
+[rustdoc](https://docs.rs/nachricht-serde/0.1.0/nachricht-serde/index.html) of nachricht-serde.  Note that, in contrast
+to JSON, a single named field without an enclosing container is possible: `key = "value"` is valid.
 
 ## Prior Art and when to use it
 
