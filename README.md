@@ -263,18 +263,18 @@ to JSON, a single named field without an enclosing container is possible: `key =
 ## Prior Art and when to use it
 
 ### Binary
-* **msgpack**: when you need something like nachricht that is mature and battle-tested
-* **CBOR**: when you need support for streaming or something that is an IETF standard
-* **RION**: when you encode mainly CSV data
-* **bincode**: when schema evolution is a non-factor and simplicity and speed reign supreme
-* **flatbuffers**: when you have large messages that are read a lot more frequently than written, but only partially
-* **capnp**: when you would use flatbuffers but also need a mighty, capability-based RPC framework
-* **ion**: when you work at amazon
-* **protobuf**: when you work at google
+* [**msgpack**](https://msgpack.org/): when you need something like nachricht that is mature and battle-tested
+* [**CBOR**](https://cbor.io/): when you need support for streaming or something that is an IETF standard
+* [**RION**](http://tutorials.jenkov.com/rion/rion-encoding.html): when you encode mainly CSV data
+* [**bincode**](https://github.com/servo/bincode): when schema evolution is a non-factor and simplicity and speed reign supreme
+* [**flatbuffers**](https://google.github.io/flatbuffers/): when you have large messages that are read a lot more frequently than written, but only partially
+* [**capnp**](https://capnproto.org/index.html): when you would use flatbuffers but also need a mighty, capability-based RPC framework
+* [**ion**](http://amzn.github.io/ion-docs/): when you work at amazon
+* [**protobuf**](https://developers.google.com/protocol-buffers): when you work at google
 
 ### Textual (not necessariliy human-readable)
-* **json**: when you need dead simple interop with javascript
-* **ron**: when you need something so self-descriptive that you could deduce a Rust data model from it
-* **toml** when your users don't understand anything past MS-DOS INI-files
-* **xml**: when you need to interop with legacy SOAP services
-* **yaml**: never
+* [**json**](https://www.json.org/json-en.html): when you need dead simple interop with javascript
+* [**ron**](https://github.com/ron-rs/ron): when you need something so self-descriptive that you could deduce a Rust data model from it
+* [**toml**](https://github.com/toml-lang/toml) when your users don't understand anything past MS-DOS INI-files
+* [**xml**](https://www.w3.org/TR/xml/): when you need to interop with legacy SOAP services
+* [**yaml**](https://yaml.org/spec/1.2/spec.html): never
