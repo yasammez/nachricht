@@ -275,6 +275,12 @@ mod tests {
         }
     }
 
+    #[test]
+    fn inefficient_encoding() {
+        let buf = [0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02];
+        assert_eq!(Header::Bag(2), Header::decode(&buf).unwrap().0);
+    }
+
     fn assert_roundtrip(value: Header, buf: &mut Vec<u8>) {
         let _ = value.encode(buf);
         assert_eq!(value, Header::decode(buf).unwrap().0);

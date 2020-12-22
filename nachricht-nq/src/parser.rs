@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn binary() {
-        assert_eq!(super::parse("'base64=='").unwrap(), Field { name: None, value: Value::Bytes(Cow::Borrowed(&[1, 2, 3])) });
+        assert_eq!(super::parse("'base64//'").unwrap(), Field { name: None, value: Value::Bytes(Cow::Borrowed(&[109, 171, 30, 235, 143, 255])) });
     }
 
     #[test]

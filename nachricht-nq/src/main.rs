@@ -6,15 +6,16 @@ use anyhow::{Context, Result};
 use structopt::StructOpt;
 use std::str::from_utf8;
 
-/// Decode and print nachricht messages
+/// Transform nachricht messages between wire format and textual representation.  By default, input is treated as binary
+/// and output is generated in textual form. This behaviour can be modified by the flags below.
 #[derive(StructOpt)]
 #[structopt(name = "nq", author = "Liv Fischer")]
 struct Opt {
-    /// encode the output into the wire format instead
+    /// Encode the output into the wire format instead
     #[structopt(short, long)]
     encode: bool,
 
-    /// parse the input from the textual representation instead
+    /// Parse the input from the textual representation instead
     #[structopt(short, long)]
     text: bool,
 }
