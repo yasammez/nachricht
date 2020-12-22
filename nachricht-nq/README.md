@@ -36,7 +36,7 @@ echo -en "\x7f\x00\x00\x00\x00\x00\x00\x00\x02\x01\x02" | nq -e | hexdump -v -e 
 Finally, the two switches can be combined to generate the wire format from the textual representation. This is useful to
 quickly feed a nachricht-expecting program some data from the command line.
 
-```
+```bash
 echo "(true,false)" | nq -te | hexdump -v -e '/1 "%02x "'; echo
 62 01 02
 ```
