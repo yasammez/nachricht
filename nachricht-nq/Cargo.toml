@@ -16,7 +16,7 @@ name = "nq"
 path = "src/main.rs"
 
 [dependencies]
-nachricht = { path = "../nachricht" }
+nachricht = { path = "../nachricht", version = "0.1.0" }
 anyhow = "1.0"
 structopt = "0.3"
 nom = "6"
