@@ -330,6 +330,10 @@ impl<'de, 'a> MapAccess<'de> for MapDeserializer<'a, 'de> {
         }
     }
 
+    #[inline]
+    fn size_hint(&self) -> Option<usize> {
+        Some(self.remaining >> 1)
+    }
 }
 
 struct StructDeserializer<'a, 'de: 'a> {
@@ -363,6 +367,10 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
         seed.deserialize(&mut *self.de)
     }
 
+    #[inline]
+    fn size_hint(&self) -> Option<usize> {
+        Some(self.remaining)
+    }
 }
 
 struct EnumDeserializer<'a, 'de: 'a> {
@@ -430,6 +438,11 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
             self.remaining -= 1;
             seed.deserialize(&mut *self.de).map(Some)
         }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> Option<usize> {
+        Some(self.remaining)
     }
 
 }
