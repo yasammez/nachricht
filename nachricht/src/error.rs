@@ -31,6 +31,7 @@ pub enum DecodeError {
     DuplicateKey(String),
     UnknownRef(usize),
     Length(u64),
+    Allocation(usize, usize),
 }
 
 impl DecodeError {
@@ -62,6 +63,7 @@ impl Display for DecodeError {
             DecodeError::DuplicateKey(key) => write!(f, "Key {} found in value position", key),
             DecodeError::UnknownRef(value) => write!(f, "Unknown reference {}", value),
             DecodeError::Length(value) => write!(f, "Length {} exceeds maximum {}", value, usize::MAX),
+            DecodeError::Allocation(count, size) => write!(f, "An allocation for {} x {} bytes failed", count, size),
         }
     }
 }

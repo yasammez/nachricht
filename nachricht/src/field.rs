@@ -5,6 +5,7 @@
 
 use crate::header::Header;
 use crate::error::{DecodeError, DecoderError, EncodeError};
+use crate::savevec;
 use std::mem::size_of;
 use std::io::Write;
 use std::convert::TryInto;
@@ -236,7 +237,7 @@ impl<'a> Decoder<'a> {
             Header::Pos(v) => Ok(Value::Int(Sign::Pos, v)),
             Header::Neg(v) => Ok(Value::Int(Sign::Neg, v)),
             Header::Bag(v) => {
-                let mut fields = Vec::with_capacity(v);
+                let mut fields = savevec::vec_with_capacity(v)?;
                 for _ in 0..v {
                     fields.push(self.decode_field()?);
                 }
@@ -376,6 +377,17 @@ mod test {
         assert!(matches!(Decoder::decode(&buf).unwrap_err().into_inner(), DecodeError::DuplicateKey(key) if key == "!"));
         let buf = [7 << 5 | 0];
         assert!(matches!(Decoder::decode(&buf).unwrap_err().into_inner(), DecodeError::UnknownRef(0)));
+    }
+
+    #[test]
+    fn too_big_allocations() {
+        let mut buf = [0u8; 9];
+        buf[0] = 0x7f;
+        for i in (1..u64::MAX).step_by(3_203_431_780_337) {
+                let i = i.to_be_bytes();
+                buf[1..].copy_from_slice(&i[..]);
+                assert!(Decoder::decode(&buf).is_err()); // should never panic
+        }
     }
 
     fn assert_roundtrip(field: Field, buf: &mut Vec<u8>) {
