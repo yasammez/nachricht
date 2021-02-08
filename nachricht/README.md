@@ -9,7 +9,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-nachricht = "0.1.0"
+nachricht = "0.2.0"
 ```
 
 Then you can construct, encode and decode nachricht messages:
