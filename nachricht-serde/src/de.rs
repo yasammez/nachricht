@@ -1,7 +1,8 @@
-use serde::Deserialize;
+use serde::{forward_to_deserialize_any, Deserialize};
 use serde::de::{self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor};
 use nachricht::{DecodeError, Header, Refable};
 use std::convert::TryInto;
+use std::any::type_name;
 
 use crate::error::{DeserializationError, Error, Result};
 
@@ -317,17 +318,16 @@ impl<'de, 'a> MapAccess<'de> for MapDeserializer<'a, 'de> {
             Ok(None)
         } else {
             self.remaining -= 1;
-            seed.deserialize(&mut *self.de).map(Some)
+            let header = self.de.decode_header()?;
+            match self.de.decode_stringy(header)? {
+                (v, Refable::Key) => seed.deserialize(MapKey { de: &mut *self.de, key: v }).map(Some),
+                (_, o) => Err(Error::UnexpectedRefable(Refable::Key.name(), o.name())),
+            }
         }
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value> {
-        if self.remaining == 0 {
-            Err(Error::Trailing)
-        } else {
-            self.remaining -= 1;
-            seed.deserialize(&mut *self.de)
-        }
+        seed.deserialize(&mut *self.de)
     }
 
     #[inline]
@@ -443,6 +443,76 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
     #[inline]
     fn size_hint(&self) -> Option<usize> {
         Some(self.remaining)
+    }
+
+}
+
+struct MapKey<'a, 'de> {
+    de: &'a mut Deserializer<'de>,
+    key: &'de str,
+}
+
+impl<'a, 'de> de::Deserializer<'de> for MapKey<'a, 'de> {
+    type Error = Error;
+
+    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_borrowed_str(self.key)
+    }
+
+    fn deserialize_bool<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        match self.key {
+            "true"  => visitor.visit_bool(true),
+            "false" => visitor.visit_bool(false),
+            _       => Err(Error::Key(self.key.into(), type_name::<bool>())),
+        }
+    }
+
+    fn deserialize_i8<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_i8(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<i8>()))?)
+    }
+
+    fn deserialize_i16<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_i16(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<i16>()))?)
+    }
+
+    fn deserialize_i32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_i32(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<i32>()))?)
+    }
+
+    fn deserialize_i64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_i64(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<i64>()))?)
+    }
+
+    fn deserialize_u8<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_u8(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<u8>()))?)
+    }
+
+    fn deserialize_u16<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_u16(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<u16>()))?)
+    }
+
+    fn deserialize_u32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_u32(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<u32>()))?)
+    }
+
+    fn deserialize_u64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_u64(self.key.parse().map_err(|_| Error::Key(self.key.into(), type_name::<u64>()))?)
+    }
+
+    fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_some(self)
+    }
+
+    fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value> {
+        visitor.visit_newtype_struct(self)
+    }
+
+    fn deserialize_enum<V: Visitor<'de>>(self, name: &'static str, variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
+        self.de.deserialize_enum(name, variants, visitor)
+    }
+
+    forward_to_deserialize_any! {
+        f32 f64 char str string unit unit_struct seq tuple tuple_struct map struct identifier ignored_any bytes byte_buf
     }
 
 }
