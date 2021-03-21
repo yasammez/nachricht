@@ -69,7 +69,7 @@ impl Display for Error {
             Error::KeyType => write!(fmt, "Map key must be convertible to a string. Maybe use crate `serde_with` to transform the map into a vec of tuples"),
             Error::Length => fmt.write_str("Length required"),
             Error::Trailing => fmt.write_str("Trailing characters in input"),
-            Error::UnexpectedHeader(expected, actual) => write!(fmt, "Unexpected header: expected one of ({}), found {}", expected.join(" ,"), actual),
+            Error::UnexpectedHeader(expected, actual) => write!(fmt, "Unexpected header: expected one of ({}), found {}", expected.join(", "), actual),
             Error::UnexpectedRefable(expected, actual) => write!(fmt, "Unexpected refable: expected {}, found {}", expected, actual),
             Error::Utf8(e) => write!(fmt, "Bytes aren't valid Utf-8: {}", e.to_string()),
             Error::Key(k, t) => write!(fmt, "Key `{}` could not be parsed as {}", k, t),

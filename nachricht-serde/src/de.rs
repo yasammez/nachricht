@@ -320,7 +320,7 @@ impl<'de, 'a> MapAccess<'de> for MapDeserializer<'a, 'de> {
             self.remaining -= 1;
             let header = self.de.decode_header()?;
             match self.de.decode_stringy(header)? {
-                (v, Refable::Key) => seed.deserialize(MapKey { de: &mut *self.de, key: v }).map(Some),
+                (v, Refable::Key) => seed.deserialize(MapKey { key: v }).map(Some),
                 (_, o) => Err(Error::UnexpectedRefable(Refable::Key.name(), o.name())),
             }
         }
@@ -447,12 +447,11 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
 
 }
 
-struct MapKey<'a, 'de> {
-    de: &'a mut Deserializer<'de>,
+struct MapKey<'de> {
     key: &'de str,
 }
 
-impl<'a, 'de> de::Deserializer<'de> for MapKey<'a, 'de> {
+impl<'de> de::Deserializer<'de> for MapKey<'de> {
     type Error = Error;
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -507,8 +506,8 @@ impl<'a, 'de> de::Deserializer<'de> for MapKey<'a, 'de> {
         visitor.visit_newtype_struct(self)
     }
 
-    fn deserialize_enum<V: Visitor<'de>>(self, name: &'static str, variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
-        self.de.deserialize_enum(name, variants, visitor)
+    fn deserialize_enum<V: Visitor<'de>>(self, _name: &'static str, _variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
+        visitor.visit_enum(self.key.into_deserializer())
     }
 
     forward_to_deserialize_any! {

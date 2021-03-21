@@ -1,6 +1,6 @@
 [package]
 name = "nachricht-serde"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Liv <liv.fischer@senacor.com>"]
 license = "MIT"
 description = "Serde bindings for nachricht"

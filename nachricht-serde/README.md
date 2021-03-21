@@ -6,7 +6,7 @@ Serde-bindings for the nachricht data interchange format.
 
 ```toml
 [dependencies]
-nachricht-serde = "0.2.0"
+nachricht-serde = "0.3.1"
 ```
 
 ## Usage example
