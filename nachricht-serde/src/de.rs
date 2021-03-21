@@ -507,8 +507,8 @@ impl<'a, 'de> de::Deserializer<'de> for MapKey<'a, 'de> {
         visitor.visit_newtype_struct(self)
     }
 
-    fn deserialize_enum<V: Visitor<'de>>(self, name: &'static str, variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
-        self.de.deserialize_enum(name, variants, visitor)
+    fn deserialize_enum<V: Visitor<'de>>(self, _name: &'static str, _variants: &'static [&'static str],  visitor: V) -> Result<V::Value> {
+        visitor.visit_enum(self.key.into_deserializer())
     }
 
     forward_to_deserialize_any! {
