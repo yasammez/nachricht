@@ -257,7 +257,7 @@ This could roughly be translated into a nachricht textual representation of:
 ```
 
 For an explanation of the binary format of this example, check out the
-[rustdoc](https://docs.rs/nachricht-serde/0.1.0/nachricht-serde/index.html) of nachricht-serde.  Note that, in contrast
+[rustdoc](https://docs.rs/nachricht-serde/0.3.1/nachricht_serde/index.html) of nachricht-serde.  Note that, in contrast
 to JSON, a single named field without an enclosing container is possible: `key = "value"` is valid.
 
 ## Prior Art and when to use it
