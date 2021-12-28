@@ -1,6 +1,6 @@
 [package]
 name = "nachricht-serde"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Liv <liv.fischer@senacor.com>"]
 license = "MIT"
 description = "Serde bindings for nachricht"
@@ -14,7 +14,7 @@ edition = "2018"
 [dependencies]
 
 serde = "1.0"
-nachricht = { path = "../nachricht", version = "0.2.0" }
+nachricht = { path = "../nachricht", version = "0.2.1" }
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

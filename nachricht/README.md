@@ -3,13 +3,17 @@
 This is a pure Rust implementation of the binary
 [nachricht](https://github.com/yasammez/nachricht/blob/master/README.md) data interchange format.
 
+## Minimum supported Rust version
+Since this crates makes use of the fallible collection API to pre-allocate Bags when deserializing values, the minimum
+required Rust version is `1.57.0`.
+
 ## Usage
 
 Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-nachricht = "0.2.0"
+nachricht = "0.2.1"
 ```
 
 Then you can construct, encode and decode nachricht messages:

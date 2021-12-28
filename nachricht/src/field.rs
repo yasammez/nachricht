@@ -5,7 +5,6 @@
 
 use crate::header::Header;
 use crate::error::{DecodeError, DecoderError, EncodeError};
-use crate::savevec;
 use std::mem::size_of;
 use std::io::Write;
 use std::convert::TryInto;
@@ -237,7 +236,8 @@ impl<'a> Decoder<'a> {
             Header::Pos(v) => Ok(Value::Int(Sign::Pos, v)),
             Header::Neg(v) => Ok(Value::Int(Sign::Neg, v)),
             Header::Bag(v) => {
-                let mut fields = savevec::vec_with_capacity(v)?;
+                let mut fields = Vec::with_capacity(0);
+                fields.try_reserve(v)?;
                 for _ in 0..v {
                     fields.push(self.decode_field()?);
                 }

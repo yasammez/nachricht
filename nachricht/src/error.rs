@@ -31,7 +31,7 @@ pub enum DecodeError {
     DuplicateKey(String),
     UnknownRef(usize),
     Length(u64),
-    Allocation(usize, usize),
+    Allocation,
 }
 
 impl DecodeError {
@@ -43,6 +43,12 @@ impl DecodeError {
 impl From<std::str::Utf8Error> for DecodeError {
     fn from(e: std::str::Utf8Error) -> DecodeError {
         DecodeError::Utf8(e)
+    }
+}
+
+impl From<std::collections::TryReserveError> for DecodeError {
+    fn from(_e: std::collections::TryReserveError) -> DecodeError {
+        DecodeError::Allocation
     }
 }
 
@@ -63,7 +69,7 @@ impl Display for DecodeError {
             DecodeError::DuplicateKey(key) => write!(f, "Key {} found in value position", key),
             DecodeError::UnknownRef(value) => write!(f, "Unknown reference {}", value),
             DecodeError::Length(value) => write!(f, "Length {} exceeds maximum {}", value, usize::MAX),
-            DecodeError::Allocation(count, size) => write!(f, "An allocation for {} x {} bytes failed", count, size),
+            DecodeError::Allocation => f.write_str("An allocation failed"),
         }
     }
 }

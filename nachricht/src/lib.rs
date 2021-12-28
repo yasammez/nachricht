@@ -39,8 +39,6 @@
 mod error;
 mod header;
 mod field;
-#[doc(hidden)]
-mod savevec;
 
 pub use field::*;
 pub use error::*;
