@@ -1,23 +1,36 @@
-use serde::ser::{self, Serialize, Impossible};
-use nachricht::{EncodeError, Header, Refable};
+use serde::ser::{self, Serialize};
+use nachricht::{EncodeError, Header, Sign};
 use std::io::Write;
+use std::collections::HashMap;
 
 use crate::error::{Error, Result};
+use crate::preser::{Layout, Layouts, preserialize};
 
 pub struct Serializer<W> {
-    symbols: Vec<(Refable, String)>,
+    layouts: Layouts,
+    symbols: HashMap<&'static str, usize>,
+    next_free: usize,
     output: W,
 }
 
 pub fn to_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    let buf = Vec::new();
-    let mut serializer = Serializer { output: buf, symbols: Vec::new() };
+    let mut serializer = Serializer {
+        output: Vec::new(),
+        symbols: HashMap::new(),
+        layouts: preserialize(value)?,
+        next_free: 0
+    };
     value.serialize(&mut serializer)?;
     Ok(serializer.output())
 }
 
 pub fn to_writer<T: Serialize, W: Write>(writer: W, value: &T) -> Result<()> {
-    let mut serializer = Serializer { output: writer, symbols: Vec::new() };
+    let mut serializer = Serializer {
+        output: writer,
+        symbols: HashMap::new(),
+        layouts: preserialize(value)?,
+        next_free: 0
+    };
     value.serialize(&mut serializer)?;
     Ok(())
 }
@@ -29,15 +42,63 @@ impl Serializer<Vec<u8>> {
 }
 
 impl<W: Write> Serializer<W> {
-    fn serialize_refable(&mut self, key: &str, kind: Refable) -> Result<()> {
-        match self.symbols.iter().enumerate().find(|(_, (k, v))| *k == kind && v == key) {
-            Some((i, _)) => { Header::Ref(i).encode(&mut self.output)?; },
-            None         => {
-                self.symbols.push((kind, key.to_owned()));
-                match kind { Refable::Key => Header::Key(key.len()), Refable::Sym => Header::Sym(key.len()) }.encode(&mut self.output)?;
-                self.output.write_all(key.as_bytes()).map_err(EncodeError::from)?;
+
+    fn next(&mut self) -> usize {
+        self.next_free += 1;
+        self.next_free - 1
+    }
+
+    #[inline(always)]
+    fn get_variant_idx(&mut self, name: &'static str, variant: &'static str) -> Result<&mut Option<usize>> {
+        Ok(self.layouts.variants.get_mut(name).and_then(|m| m.get_mut(variant)).ok_or(Error::UnknownVariantLayout(name, variant))?)
+    }
+
+    #[inline(always)]
+    fn get_layout(&mut self, name: &'static str, variant: Option<&'static str>) -> Result<&mut Layout> {
+        Ok(self.layouts.structs.get_mut(name).and_then(|m| m.get_mut(&variant)).ok_or(Error::UnknownStructLayout(name))?)
+    }
+
+    fn serialize_symbol(&mut self, symbol: &'static str) -> Result<()> {
+        match self.symbols.get(symbol) {
+            Some(i) => { Header::Ref(*i).encode(&mut self.output)?; },
+            None    => {
+                Header::Sym(symbol.len()).encode(&mut self.output)?;
+                self.output.write_all(symbol.as_bytes()).map_err(EncodeError::from)?;
+                let next = self.next();
+                self.symbols.insert(symbol, next);
             }
         }
+        Ok(())
+    }
+
+    fn serialize_layout(&mut self, name: &'static str, variant: Option<&'static str>) -> Result<()> {
+        let layout = self.get_layout(name, variant)?;
+        let fields = layout.fields.clone();
+        match layout.idx {
+            Some(i) => { Header::Ref(i).encode(&mut self.output)?; },
+            None    => {
+                Header::Rec(fields.len()).encode(&mut self.output)?;
+                for sym in fields.iter() {
+                    self.serialize_symbol(sym)?;
+                }
+                let next = self.next();
+                self.get_layout(name, variant)?.idx.replace(next);
+            }
+        };
+        Ok(())
+    }
+
+    fn serialize_variant(&mut self, name: &'static str, variant: &'static str) -> Result<()> {
+        let idx = self.get_variant_idx(name, variant)?;
+        match idx {
+            Some(i) => { Header::Ref(*i).encode(&mut self.output)?; },
+            None    => {
+                Header::Rec(1).encode(&mut self.output)?;
+                self.serialize_symbol(variant)?;
+                let next = self.next();
+                self.get_variant_idx(name, variant)?.replace(next);
+            }
+        };
         Ok(())
     }
 }
@@ -55,7 +116,7 @@ impl<'a, W: Write> ser::Serializer for &'a mut Serializer<W> {
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<()> {
-        match v { true => Header::True, false => Header::False }.encode(&mut self.output)?;
+        (if v { Header::True } else { Header::False }).encode(&mut self.output)?;
         Ok(())
     }
 
@@ -72,11 +133,7 @@ impl<'a, W: Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_i64(self, v: i64) -> Result<()> {
-        if v < 0 {
-            Header::Neg(v.abs() as u64)
-        } else {
-            Header::Pos(v as u64)
-        }.encode(&mut self.output)?;
+        Header::Int(if v < 0 { Sign::Neg } else { Sign::Pos }, v.unsigned_abs()).encode(&mut self.output)?;
         Ok(())
     }
 
@@ -93,7 +150,7 @@ impl<'a, W: Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
-        Header::Pos(v).encode(&mut self.output)?;
+        Header::Int(Sign::Pos, v).encode(&mut self.output)?;
         Ok(())
     }
 
@@ -144,24 +201,22 @@ impl<'a, W: Write> ser::Serializer for &'a mut Serializer<W> {
     }
 
     fn serialize_unit_variant(self, _name: &'static str, _index: u32, variant: &'static str) -> Result<()> {
-       self.serialize_refable(variant, Refable::Sym)
+        self.serialize_symbol(variant)
     }
 
     fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, value: &T) -> Result<()> {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _index: u32, variant: &'static str, value: &T) -> Result<()> {
-        Header::Bag(1).encode(&mut self.output)?;
-        self.serialize_refable(variant, Refable::Key)?;
-        value.serialize(self)?;
-        Ok(())
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, name: &'static str, _index: u32, variant: &'static str, value: &T) -> Result<()> {
+        self.serialize_variant(name, variant)?;
+        value.serialize(self)
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         match len {
             Some(l) => {
-                Header::Bag(l).encode(&mut self.output)?;
+                Header::Arr(l).encode(&mut self.output)?;
                 Ok(self)
             },
             None => Err(Error::Length),
@@ -176,30 +231,31 @@ impl<'a, W: Write> ser::Serializer for &'a mut Serializer<W> {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant> {
-        Header::Bag(1).encode(&mut self.output)?;
-        self.serialize_refable(variant, Refable::Key)?;
-        Header::Bag(len).encode(&mut self.output)?;
+    fn serialize_tuple_variant(self, name: &'static str, _index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant> {
+        self.serialize_variant(name, variant)?;
+        Header::Arr(len).encode(&mut self.output)?;
         Ok(self)
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         match len {
             Some(len) => {
-                Header::Bag(len).encode(&mut self.output)?;
+                Header::Map(len).encode(&mut self.output)?;
                 Ok(self)
             },
             None => Err(Error::Length)
         }
     }
 
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        Header::Bag(len).encode(&mut self.output)?;
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        self.serialize_layout(name, None)?;
         Ok(self)
     }
 
-    fn serialize_struct_variant(self, name: &'static str, index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant> {
-        self.serialize_tuple_variant(name, index, variant, len)
+    fn serialize_struct_variant(self, name: &'static str, _index: u32, variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant> {
+        self.serialize_variant(name, variant)?;
+        self.serialize_layout(name, Some(variant))?;
+        Ok(self)
     }
 
 }
@@ -262,25 +318,10 @@ impl<'a, W: Write> ser::SerializeMap for &'a mut Serializer<W> {
     type Error = Error;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
-        key.serialize(MapKeySerializer { ser: self })
+        key.serialize(&mut **self)
     }
 
     fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<()> {
-        Ok(())
-    }
-
-}
-
-impl<'a, W: Write> ser::SerializeStruct for &'a mut Serializer<W> {
-    type Ok = ();
-    type Error = Error;
-
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<()> {
-        self.serialize_refable(key, Refable::Key)?;
         value.serialize(&mut **self)
     }
 
@@ -294,8 +335,7 @@ impl<'a, W: Write> ser::SerializeStructVariant for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<()> {
-        self.serialize_refable(key, Refable::Key)?;
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, _key: &'static str, value: &T) -> Result<()> {
         value.serialize(&mut **self)
     }
 
@@ -305,130 +345,16 @@ impl<'a, W: Write> ser::SerializeStructVariant for &'a mut Serializer<W> {
 
 }
 
-struct MapKeySerializer<'a, W: 'a> {
-    ser: &'a mut Serializer<W>,
-}
-
-impl<'a, W: Write> ser::Serializer for MapKeySerializer<'a, W> {
+impl<'a, W: Write> ser::SerializeStruct for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
-    type SerializeSeq = Impossible<(), Error>;
-    type SerializeTuple = Impossible<(), Error>;
-    type SerializeTupleStruct = Impossible<(), Error>;
-    type SerializeTupleVariant = Impossible<(), Error>;
-    type SerializeMap = Impossible<(), Error>;
-    type SerializeStruct = Impossible<(), Error>;
-    type SerializeStructVariant = Impossible<(), Error>;
 
-    fn serialize_bool(self, v: bool) -> Result<()> {
-        self.ser.serialize_refable(match v { true => "true", false => "false" }, Refable::Key)
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, _key: &'static str, value: &T) -> Result<()> {
+        value.serialize(&mut **self)
     }
 
-    fn serialize_i8(self, v: i8) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
+    fn end(self) -> Result<()> {
+        Ok(())
     }
 
-    fn serialize_i16(self, v: i16) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_i32(self, v: i32) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_i64(self, v: i64) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_u8(self, v: u8) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_u16(self, v: u16) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_u32(self, v: u32) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_u64(self, v: u64) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_f32(self, _v: f32) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_f64(self, _v: f64) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_char(self, v: char) -> Result<()> {
-        self.ser.serialize_refable(&v.to_string(), Refable::Key)
-    }
-
-    fn serialize_str(self, v: &str) -> Result<()> {
-        self.ser.serialize_refable(v, Refable::Key)
-    }
-
-    fn serialize_bytes(self, _v: &[u8]) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_none(self) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_some<T: ?Sized + Serialize>(self, _v: &T) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_unit(self) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_unit_variant(self, _name: &'static str, _index: u32, variant: &'static str) -> Result<()> {
-        self.ser.serialize_refable(variant, Refable::Key)
-    }
-
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, value: &T) -> Result<()> {
-        value.serialize(self)
-    }
-
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _index: u32, _variant: &'static str, _value: &T) -> Result<()> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_tuple_variant(self, _name: &'static str, _index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        Err(Error::KeyType)
-    }
-
-    fn serialize_struct_variant(self, _name: &'static str, _index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant> {
-        Err(Error::KeyType)
-    }
 }

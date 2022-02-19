@@ -13,8 +13,8 @@ use anyhow::{anyhow, Result};
 use base64::decode;
 use std::borrow::Cow;
 
-pub fn parse(i: &str) -> Result<Field> {
-    Ok(all_consuming(terminated(field, white))(i).finish().map_err(|e| anyhow!("{}", e))?.1)
+pub fn parse(i: &str) -> Result<Value> {
+    Ok(all_consuming(terminated(nch_value, white))(i).finish().map_err(|e| anyhow!("{}", e))?.1)
 }
 
 pub enum Keyword {
@@ -39,7 +39,7 @@ fn keyword(i: &str) -> IResult<&str, Keyword> {
 }
 
 fn identifier(i: &str) -> IResult<&str, &str> {
-    is_not(" \\$,=\"'()#\n")(i)
+    is_not(" \\$,:\"'()#\n")(i)
 }
 
 fn float(i: &str) -> IResult<&str, &str> {
@@ -100,7 +100,23 @@ fn symbol(i: &str) -> IResult<&str, String> {
     ))(i)
 }
 
-fn container(i: &str) -> IResult<&str, Vec<Field>> {
+fn array(i: &str) -> IResult<&str, Vec<Value>> {
+    delimited(
+        tag("["),
+        map(tuple((separated_list0(tag(","), nch_value), white, opt(tag(",")), white)), |(l,_,_,_)| l),
+        tag("]"),
+    )(i)
+}
+
+fn nch_map(i: &str) -> IResult<&str, Vec<(Value, Value)>> {
+    delimited(
+        tag("{"),
+        map(tuple((separated_list0(tag(","), entry), white, opt(tag(",")), white)), |(l,_,_,_)| l),
+        tag("}"),
+    )(i)
+}
+
+fn record(i: &str) -> IResult<&str, Vec<(String, Value)>> {
     delimited(
         tag("("),
         map(tuple((separated_list0(tag(","), field), white, opt(tag(",")), white)), |(l,_,_,_)| l),
@@ -108,11 +124,21 @@ fn container(i: &str) -> IResult<&str, Vec<Field>> {
     )(i)
 }
 
+fn entry(i: &str) -> IResult<&str, (Value, Value)> {
+    map(tuple((nch_value, white, tag(":"), white, nch_value)), |(l,_,_,_,r)| (l, r))(i)
+}
+
+fn field(i: &str) -> IResult<&str, (String, Value)> {
+    map(tuple((white, key, white, tag(":"), white, nch_value)), |(_,l,_,_,_,r)| (l, r))(i)
+}
+
 fn nch_value(i: &str) -> IResult<&str, Value> {
     map(tuple((
             white,
             alt((
-                map(container, |f| Value::Container(f)),
+                map(array, |f| Value::Array(f)),
+                map(nch_map, |f| Value::Map(f)),
+                map(record, |f| Value::Record(f.into_iter().map(|(k, v)| (Cow::Owned(k), v)).collect())),
                 map(symbol, |s| Value::Symbol(Cow::Owned(s))),
                 map(escaped_string, |s| Value::Str(Cow::Owned(s))),
                 map(bytes, |b| Value::Bytes(Cow::Owned(b))),
@@ -132,15 +158,8 @@ fn nch_value(i: &str) -> IResult<&str, Value> {
 
 fn key(i: &str) -> IResult<&str, String> {
     alt((
-            map(tuple((identifier, white, tag("="))), |(i,_,_)| String::from(i)),
-            map(tuple((escaped_string, white, tag("="))), |(i,_,_)| i)
-    ))(i)
-}
-
-fn field(i: &str) -> IResult<&str, Field> {
-    alt((
-        map(tuple((white, key, white, nch_value, white)), |(_,k,_,v,_)| Field { name: Some(Cow::Owned(k)), value: v }),
-        map(nch_value, |v| Field { name: None, value: v }),
+            map(identifier, |i| String::from(i)),
+            escaped_string,
     ))(i)
 }
 
@@ -149,60 +168,98 @@ mod tests {
 
     use ::nachricht::*;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
 
     #[test]
     fn primitives() {
-        assert_eq!(super::parse("null").unwrap(), Field { name: None, value: Value::Null });
-        assert_eq!(super::parse("true").unwrap(), Field { name: None, value: Value::Bool(true) });
-        assert_eq!(super::parse("false").unwrap(), Field { name: None, value: Value::Bool(false) });
+        assert_eq!(super::parse("null").unwrap(), Value::Null);
+        assert_eq!(super::parse("true").unwrap(), Value::Bool(true));
+        assert_eq!(super::parse("false").unwrap(), Value::Bool(false));
     }
 
     #[test]
     fn integers() {
-        assert_eq!(super::parse("123").unwrap(), Field { name: None, value: Value::Int(Sign::Pos, 123) });
-        assert_eq!(super::parse("-123").unwrap(), Field { name: None, value: Value::Int(Sign::Neg, 123) });
+        assert_eq!(super::parse("123").unwrap(), Value::Int(Sign::Pos, 123));
+        assert_eq!(super::parse("-123").unwrap(), Value::Int(Sign::Neg, 123));
     }
 
     #[test]
     fn floats() {
-        assert_eq!(super::parse("$123").unwrap(), Field { name: None, value: Value::F32(123f32) });
-        assert_eq!(super::parse("$$123").unwrap(), Field { name: None, value: Value::F64(123f64) });
+        assert_eq!(super::parse("$123").unwrap(), Value::F32(123f32));
+        assert_eq!(super::parse("$$123").unwrap(), Value::F64(123f64));
     }
 
     #[test]
     fn strings() {
-        assert_eq!(super::parse("\"\"").unwrap(), Field { name: None, value: Value::Str(Cow::Borrowed("")) });
-        assert_eq!(super::parse("\"abc\"").unwrap(), Field { name: None, value: Value::Str(Cow::Borrowed("abc")) });
-        assert_eq!(super::parse("\"abc\\\"def\"").unwrap(), Field { name: None, value: Value::Str(Cow::Borrowed("abc\"def")) });
-        assert_eq!(super::parse("\"abc\\\\def\"").unwrap(), Field { name: None, value: Value::Str(Cow::Borrowed("abc\\def")) });
+        assert_eq!(super::parse("\"\"").unwrap(), Value::Str(Cow::Borrowed("")));
+        assert_eq!(super::parse("\"abc\"").unwrap(), Value::Str(Cow::Borrowed("abc")));
+        assert_eq!(super::parse("\"abc\\\"def\"").unwrap(), Value::Str(Cow::Borrowed("abc\"def")));
+        assert_eq!(super::parse("\"abc\\\\def\"").unwrap(), Value::Str(Cow::Borrowed("abc\\def")));
     }
 
     #[test]
     fn binary() {
-        assert_eq!(super::parse("'base64//'").unwrap(), Field { name: None, value: Value::Bytes(Cow::Borrowed(&[109, 171, 30, 235, 143, 255])) });
+        assert_eq!(super::parse("'base64//'").unwrap(), Value::Bytes(Cow::Borrowed(&[109, 171, 30, 235, 143, 255])));
     }
 
     #[test]
     fn symbol() {
-        assert_eq!(super::parse("#abc").unwrap(), Field { name: None, value: Value::Symbol(Cow::Borrowed("abc")) });
-        assert_eq!(super::parse("#\"a\\\"bc\"").unwrap(), Field { name: None, value: Value::Symbol(Cow::Borrowed("a\"bc")) });
+        assert_eq!(super::parse("#abc").unwrap(), Value::Symbol(Cow::Borrowed("abc")));
+        assert_eq!(super::parse("#\"a\\\"bc\"").unwrap(), Value::Symbol(Cow::Borrowed("a\"bc")));
     }
 
     #[test]
-    fn key() {
-        assert_eq!(super::parse("true = false").unwrap(), Field { name: Some(Cow::Borrowed("true")), value: Value::Bool(false) });
-        assert_eq!(super::parse("\"true\"= #false").unwrap(), Field { name: Some(Cow::Borrowed("true")), value: Value::Symbol(Cow::Borrowed("false")) });
-        assert_eq!(super::parse("true =#\"false\"").unwrap(), Field { name: Some(Cow::Borrowed("true")), value: Value::Symbol(Cow::Borrowed("false")) });
+    fn array() {
+        assert_eq!(super::parse("[]").unwrap(), Value::Array(Vec::new()));
+        assert_eq!(super::parse("[true, false]").unwrap(), Value::Array(vec![
+                    Value::Bool(true),
+                    Value::Bool(false),
+        ]));
     }
 
     #[test]
-    fn container() {
-        assert_eq!(super::parse("()").unwrap(), Field { name: None, value: Value::Container(vec![]) });
-        assert_eq!(super::parse("x = ()").unwrap(), Field { name: Some(Cow::Borrowed("x")), value: Value::Container(vec![]) });
-        assert_eq!(super::parse("(true, x = false)").unwrap(), Field { name: None, value: Value::Container(vec![
-                Field { name: None, value: Value::Bool(true) },
-                Field { name: Some(Cow::Borrowed("x")), value: Value::Bool(false) },
-        ]) });
+    fn record() {
+        assert_eq!(super::parse("()").unwrap(), Value::Record(BTreeMap::new()));
+        assert_eq!(super::parse("(x: true, y: false)").unwrap(), Value::Record(BTreeMap::from([
+                    (Cow::Borrowed("x"), Value::Bool(true)),
+                    (Cow::Borrowed("y"), Value::Bool(false)),
+        ])));
+    }
+
+    #[test]
+    fn map() {
+        assert_eq!(super::parse("{}").unwrap(), Value::Map(Vec::new()));
+        assert_eq!(super::parse("{\"x\": true, \"y\": false}").unwrap(), Value::Map(vec![
+                    (Value::Str(Cow::Borrowed("x")), Value::Bool(true)),
+                    (Value::Str(Cow::Borrowed("y")), Value::Bool(false)),
+        ]));
+    }
+
+    #[test]
+    fn canonical() {
+        let message = "( cats: [ ( name: \"Jessica\", species: #PrionailurusViverrinus, ), ( name: \"Wantan\", species: #LynxLynx, ), ( name: \"Sphinx\", species: #FelisCatus, ), ( name: \"Chandra\", species: #PrionailurusViverrinus, ), ], version: 1, )";
+        let expected = Value::Record(BTreeMap::from([
+            (Cow::Borrowed("cats"), Value::Array(vec![
+                Value::Record(BTreeMap::from([
+                    (Cow::Borrowed("name"), Value::Str(Cow::Borrowed("Jessica"))),
+                    (Cow::Borrowed("species"), Value::Symbol(Cow::Borrowed("PrionailurusViverrinus"))),
+                ])),
+                Value::Record(BTreeMap::from([
+                    (Cow::Borrowed("name"), Value::Str(Cow::Borrowed("Wantan"))),
+                    (Cow::Borrowed("species"), Value::Symbol(Cow::Borrowed("LynxLynx"))),
+                ])),
+                Value::Record(BTreeMap::from([
+                    (Cow::Borrowed("name"), Value::Str(Cow::Borrowed("Sphinx"))),
+                    (Cow::Borrowed("species"), Value::Symbol(Cow::Borrowed("FelisCatus"))),
+                ])),
+                Value::Record(BTreeMap::from([
+                    (Cow::Borrowed("name"), Value::Str(Cow::Borrowed("Chandra"))),
+                    (Cow::Borrowed("species"), Value::Symbol(Cow::Borrowed("PrionailurusViverrinus"))),
+                ])),
+            ])),
+            (Cow::Borrowed("version"), Value::Int(Sign::Pos, 1)),
+        ]));
+        assert_eq!(super::parse(&message).unwrap(), expected);
     }
 
 }

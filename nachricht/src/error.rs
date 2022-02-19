@@ -28,8 +28,8 @@ impl Display for DecoderError {
 pub enum DecodeError {
     Eof,
     Utf8(std::str::Utf8Error),
-    DuplicateKey(String),
-    UnknownRef(usize),
+    InvalidRef(usize),
+    IllegalKey(&'static str),
     Length(u64),
     Allocation,
 }
@@ -66,10 +66,10 @@ impl Display for DecodeError {
         match self {
             DecodeError::Eof => f.write_str("Unexpected end of buffer while decoding"),
             DecodeError::Utf8(e) => write!(f, "String slice was not valid Utf-8: {}", e),
-            DecodeError::DuplicateKey(key) => write!(f, "Key {} found in value position", key),
-            DecodeError::UnknownRef(value) => write!(f, "Unknown reference {}", value),
+            DecodeError::InvalidRef(value) => write!(f, "Invalid reference {}", value),
             DecodeError::Length(value) => write!(f, "Length {} exceeds maximum {}", value, usize::MAX),
             DecodeError::Allocation => f.write_str("An allocation failed"),
+            DecodeError::IllegalKey(v) => write!(f, "Record key needs to be a symbol but was {}", v),
         }
     }
 }

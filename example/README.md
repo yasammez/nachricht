@@ -4,8 +4,7 @@
 cargo install nachricht-nq
 cargo run | nq
 (
-  version = 1,
-  cats = (
+  cats = [
     (
       name = "Jessica",
       species = #PrionailurusViverrinus,
@@ -22,6 +21,7 @@ cargo run | nq
       name = "Chandra",
       species = #PrionailurusViverrinus,
     ),
-  ),
+  ],
+  version = 1,
 )
 ```

@@ -1,6 +1,6 @@
 [package]
 name = "nachricht-nq"
-version = "0.2.1"
+version = "0.4.0"
 authors = ["Liv Fischer <liv.fischer@senacor.com>"]
 license = "MIT"
 description = "Pretty printing of nachricht messages"
@@ -9,16 +9,16 @@ documentation = "https://docs.rs/nachricht-nq"
 readme = "README.md"
 keywords = ["nachricht", "serialization"]
 categories = ["encoding"]
-edition = "2018"
+edition = "2021"
 
 [[bin]]
 name = "nq"
 path = "src/main.rs"
 
 [dependencies]
-nachricht = { path = "../nachricht", version = "0.2.1" }
+nachricht = { path = "../nachricht", version = "0.4.0" }
 anyhow = "1.0"
 structopt = "0.3"
 nom = "6"
 base64 = "0.13"
-edit = "0.1.2"
+edit = "0.1.3"

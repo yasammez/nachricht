@@ -30,14 +30,15 @@ pub enum Error {
     Decode(DecodeError),
     Trailing,
     UnexpectedHeader(&'static [&'static str], &'static str),
-    UnexpectedRefable(&'static str, &'static str),
     Int,
     Utf8(Utf8Error),
-    Key(String, &'static str),
     // Encode
     Length,
     Encode(EncodeError),
-    KeyType,
+    UnknownStructLayout(&'static str),
+    UnknownVariantLayout(&'static str, &'static str),
+    // Preser
+    DuplicateLayout(&'static str, Option<&'static str>),
     // Both
     Message(String),
 }
@@ -66,14 +67,14 @@ impl Display for Error {
             Error::Message(msg) => fmt.write_str(msg),
             Error::Encode(e) => write!(fmt, "Encoding error: {}", e.to_string()),
             Error::Decode(e) => write!(fmt, "Decoding error: {}", e.to_string()),
-            Error::KeyType => write!(fmt, "Map key must be convertible to a string. Maybe use crate `serde_with` to transform the map into a vec of tuples"),
             Error::Length => fmt.write_str("Length required"),
             Error::Trailing => fmt.write_str("Trailing characters in input"),
             Error::UnexpectedHeader(expected, actual) => write!(fmt, "Unexpected header: expected one of ({}), found {}", expected.join(", "), actual),
-            Error::UnexpectedRefable(expected, actual) => write!(fmt, "Unexpected refable: expected {}, found {}", expected, actual),
             Error::Utf8(e) => write!(fmt, "Bytes aren't valid Utf-8: {}", e.to_string()),
-            Error::Key(k, t) => write!(fmt, "Key `{}` could not be parsed as {}", k, t),
             Error::Int => fmt.write_str("Integer didn't fit into target type"),
+            Error::UnknownStructLayout(l) => write!(fmt, "Layout for struct `{}` is unknown", l),
+            Error::UnknownVariantLayout(l, m) => write!(fmt, "Layout for variant`{}::{}` is unknown", l, m),
+            Error::DuplicateLayout(l, m) => write!(fmt, "Duplicate layout for name `{}{}`: conditionally skipping fields is not supported", l, match m { Some(x) => format!("::{}", x), None => "".into() }),
         }
     }
 }

@@ -47,20 +47,20 @@ fn file_mode(path: PathBuf) -> Result<()> {
 fn streaming_mode(opt: Opt) -> Result<()> {
     let mut buffer = Vec::new();
     io::stdin().read_to_end(&mut buffer).context("Failed to read stdin")?;
-    let field = if opt.text {
+    let value = if opt.text {
         parse(&buffer)?
     } else {
         Decoder::decode(&buffer)?.0
     };
     if opt.encode {
-        Encoder::encode(&field, &mut io::stdout())?;
+        Encoder::encode(&value, &mut io::stdout())?;
     } else {
-        println!("{}", &field);
+        println!("{}", &value);
     }
     Ok(())
 }
 
-fn parse(buffer: &[u8]) -> Result<Field> {
+fn parse(buffer: &[u8]) -> Result<Value> {
     let string = from_utf8(&buffer).context("input is not utf-8")?;
     parser::parse(string)
 }

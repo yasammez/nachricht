@@ -10,21 +10,32 @@
 //! architectures where `usize` is larger than `u64`, some valid Rust datastructures can not be encoded since there is
 //! no way to represent them in the wire format. A `EncodeError::Length` will be raised in these instances.
 //!
+//! # A note on Maps
+//!
+//! The variant `Value::Map` uses a `Vec` of key-value pairs internally because Rust's floating point types `f32` and
+//! `f64` implement neither `Ord` nor `Hash` and thus a nachricht `Value` cannot be used as a key in any of the standard
+//! library maps.
+//!
+//! Likewise, `Value::Record` uses a `BTreeMap` instead of a `HashMap` because field names need to have a stable
+//! ordering when deciding if a record with the same layout has already been encoded so that it can be reused.
+//!
 //! # Examples
 //!
 //! ```
 //! use nachricht::*;
 //! use std::borrow::Cow;
+//! use std::collections::BTreeMap;
 //!
 //! let mut buf = Vec::new();
-//! let field = Field { name: Some(Cow::Borrowed("key")), value: Value::Str(Cow::Borrowed("value")) };
-//! Encoder::encode(&field, &mut buf);
+//! let value = Value::Record(BTreeMap::from([(Cow::Borrowed("key"), Value::Str(Cow::Borrowed("value")))]));
+//! Encoder::encode(&value, &mut buf);
 //! assert_eq!(buf, [
-//!     0xc3, // Key of length 3
+//!     0xa1, // Record of length 1
+//!     0x63, // Symbol of length 3
 //!     0x6b, // 'k'
 //!     0x65, // 'e'
 //!     0x79, // 'y'
-//!     0x85, // Str of length 5
+//!     0x45, // Str of length 5
 //!     0x76, // 'v'
 //!     0x61, // 'a'
 //!     0x6c, // 'l'
@@ -32,14 +43,14 @@
 //!     0x65, // 'e'
 //! ]);
 //! let decoded = Decoder::decode(&buf).unwrap();
-//! assert_eq!(field, decoded.0);
-//! assert_eq!(10, decoded.1);
+//! assert_eq!(value, decoded.0);
+//! assert_eq!(11, decoded.1);
 //! ```
 
 mod error;
 mod header;
-mod field;
+mod value;
 
-pub use field::*;
+pub use value::*;
 pub use error::*;
 pub use header::*;

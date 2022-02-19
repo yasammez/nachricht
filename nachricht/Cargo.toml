@@ -1,6 +1,6 @@
 [package]
 name = "nachricht"
-version = "0.2.1"
+version = "0.4.0"
 authors = ["Liv <liv.fischer@senacor.com>"]
 license = "MIT"
 description = "Implementation of the nachricht wire format"
@@ -9,6 +9,6 @@ documentation = "https://docs.rs/nachricht"
 readme = "README.md"
 keywords = ["nachricht", "serialization"]
 categories = ["encoding"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
